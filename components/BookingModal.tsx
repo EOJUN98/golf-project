@@ -82,9 +82,16 @@ export default function BookingModal({
         );
 
         // Step 4: Wait for widget to fully render in DOM (critical!)
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 800));
 
-        // Step 5: Mark as ready
+        // Step 5: Verify widget is actually in DOM
+        const widgetElement = document.querySelector('#payment-widget iframe');
+        if (!widgetElement) {
+          console.warn('Widget iframe not found, waiting longer...');
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        // Step 6: Mark as ready
         setPaymentWidget(widget);
         setIsWidgetReady(true);
       } catch (err) {
@@ -104,13 +111,20 @@ export default function BookingModal({
 
   const handlePayment = async () => {
     if (!paymentWidget || !isWidgetReady) {
-      setError('결제 위젯이 준비되지 않았습니다.');
+      setError('결제 위젯이 준비되지 않았습니다. 잠시만 기다려주세요.');
+      return;
+    }
+
+    // Double-check widget is actually ready
+    const widgetElement = document.querySelector('#payment-widget iframe');
+    if (!widgetElement) {
+      setError('결제 위젯을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
 
     try {
       // Extra safety: Small delay before payment request
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => setTimeout(resolve, 300));
 
       // Generate unique order ID with embedded metadata
       const orderId = `ORD-${Date.now()}-${userId}-${teeTime.id}`;
@@ -245,10 +259,12 @@ export default function BookingModal({
         )}
 
         {/* Loading Indicator */}
-        {isLoading && (
+        {(isLoading || !isWidgetReady) && !error && (
           <div className="flex flex-col items-center justify-center py-12 space-y-4 mb-4">
             <Loader2 className="animate-spin text-blue-600" size={40} />
-            <p className="text-sm text-gray-500">결제 정보를 불러오고 있습니다...</p>
+            <p className="text-sm text-gray-500">
+              {isLoading ? '결제 정보를 불러오고 있습니다...' : '결제 위젯을 준비하고 있습니다...'}
+            </p>
           </div>
         )}
 
@@ -273,7 +289,9 @@ export default function BookingModal({
           }`}
         >
           {isLoading
-            ? '로딩 중...'
+            ? '결제 정보 불러오는 중...'
+            : !isWidgetReady
+            ? '결제 위젯 준비 중...'
             : error
             ? '결제 불가'
             : `${teeTime.finalPrice.toLocaleString()}원 결제하기`}
