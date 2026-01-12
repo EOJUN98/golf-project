@@ -352,7 +352,12 @@ export default function MainPage() {
 
       <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 flex justify-around py-4 text-xs font-medium text-gray-400 z-50">
         <button className="flex flex-col items-center text-black"><Home size={24} className="mb-1" />홈</button>
-        <button className="flex flex-col items-center hover:text-black"><Ticket size={24} className="mb-1" />예약</button>
+        <button
+          onClick={() => window.location.href = '/reservations'}
+          className="flex flex-col items-center hover:text-black"
+        >
+          <Ticket size={24} className="mb-1" />예약
+        </button>
         <button className="flex flex-col items-center hover:text-black"><User size={24} className="mb-1" />MY</button>
         <button className="flex flex-col items-center hover:text-black"><Menu size={24} className="mb-1" />메뉴</button>
       </nav>
