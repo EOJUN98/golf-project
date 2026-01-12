@@ -5,6 +5,7 @@ import { MapPin, Home, Ticket, User, Menu, Loader2, Timer } from 'lucide-react';
 import PriceCard from '@/components/PriceCard';
 import WeatherWidget from '@/components/WeatherWidget';
 import { calculatePrice, isPanicMode, shouldBlockTeeTime } from '@/utils/pricingEngine';
+import { supabase } from '@/lib/supabase';
 import type { WeatherData, LocationInfo, UserSegment, TeeTimeStatus } from '@/types/database';
 
 // ==================================================================
@@ -100,56 +101,107 @@ export default function MainPage() {
   const [showPanic, setShowPanic] = useState(false);
   const [panicTeeTime, setPanicTeeTime] = useState<any>(null);
   const [timeLeft, setTimeLeft] = useState(59 * 60 + 59);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate data loading
-    setTimeout(() => {
-      // Process all tee times with pricing engine
-      const processed = MOCK_TEE_TIMES.map((teeTime) => {
-        // Check if should be blocked by weather
-        const shouldBlock = shouldBlockTeeTime(teeTime.weather);
-        const finalStatus = shouldBlock ? 'BLOCKED' : teeTime.status;
+    // Fetch real data from Supabase
+    async function fetchTeeTimes() {
+      try {
+        // Fetch today's tee times from Supabase
+        const { data: teeTimes, error: fetchError } = await supabase
+          .from('tee_times')
+          .select(`
+            id,
+            tee_off_time,
+            base_price,
+            status,
+            weather_data,
+            golf_clubs (
+              id,
+              name,
+              location_lat,
+              location_lng
+            )
+          `)
+          .gte('tee_off_time', new Date().toISOString())
+          .order('tee_off_time', { ascending: true })
+          .limit(10);
 
-        // Calculate price using engine
-        const pricing = calculatePrice({
-          basePrice: teeTime.basePrice,
-          teeOffTime: teeTime.teeOffTime,
-          weather: teeTime.weather,
-          location: MOCK_USER.location,
-          userSegment: MOCK_USER.segment,
+        if (fetchError) throw fetchError;
+
+        // Fallback to mock data if no real data exists
+        const dataSource = teeTimes && teeTimes.length > 0 ? teeTimes : MOCK_TEE_TIMES.map(mock => ({
+          id: mock.id,
+          tee_off_time: mock.teeOffTime.toISOString(),
+          base_price: mock.basePrice,
+          status: mock.status,
+          weather_data: mock.weather,
+          golf_clubs: null,
+        }));
+
+        // Process all tee times with pricing engine
+        const processed = dataSource.map((teeTime: any) => {
+          // Parse weather data (could be JSONB from DB or object from mock)
+          const weather: WeatherData = typeof teeTime.weather_data === 'string'
+            ? JSON.parse(teeTime.weather_data)
+            : teeTime.weather_data;
+
+          const teeOffTime = new Date(teeTime.tee_off_time);
+
+          // Check if should be blocked by weather
+          const shouldBlock = shouldBlockTeeTime(weather);
+          const finalStatus = shouldBlock ? 'BLOCKED' : teeTime.status;
+
+          // Calculate price using engine
+          const pricing = calculatePrice({
+            basePrice: teeTime.base_price,
+            teeOffTime: teeOffTime,
+            weather: weather,
+            location: MOCK_USER.location,
+            userSegment: MOCK_USER.segment,
+          });
+
+          // Check panic mode
+          const isPanic = isPanicMode(
+            teeOffTime,
+            teeTime.status === 'BOOKED',
+            MOCK_USER.location
+          );
+
+          return {
+            id: teeTime.id,
+            teeOffTime: teeOffTime,
+            basePrice: teeTime.base_price,
+            weather: weather,
+            ...pricing,
+            status: finalStatus,
+            isPanic,
+            time: teeOffTime.toLocaleTimeString('ko-KR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          };
         });
 
-        // Check panic mode
-        const isPanic = isPanicMode(
-          teeTime.teeOffTime,
-          teeTime.status === 'BOOKED',
-          MOCK_USER.location
-        );
+        setProcessedTeeTimes(processed);
 
-        return {
-          ...teeTime,
-          ...pricing,
-          status: finalStatus,
-          isPanic,
-          time: teeTime.teeOffTime.toLocaleTimeString('ko-KR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-        };
-      });
+        // Find first panic mode tee time
+        const panicItem = processed.find((t) => t.isPanic && t.status === 'OPEN');
+        if (panicItem) {
+          setPanicTeeTime(panicItem);
+          // Show panic popup after 2 seconds
+          setTimeout(() => setShowPanic(true), 2000);
+        }
 
-      setProcessedTeeTimes(processed);
-
-      // Find first panic mode tee time
-      const panicItem = processed.find((t) => t.isPanic && t.status === 'OPEN');
-      if (panicItem) {
-        setPanicTeeTime(panicItem);
-        // Show panic popup after 2 seconds
-        setTimeout(() => setShowPanic(true), 2000);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching tee times:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch data');
+        setLoading(false);
       }
+    }
 
-      setLoading(false);
-    }, 500);
+    fetchTeeTimes();
 
     // Timer countdown
     const timer = setInterval(() => {
@@ -170,6 +222,23 @@ export default function MainPage() {
     return (
       <div className="flex h-screen justify-center items-center bg-gray-50">
         <Loader2 className="animate-spin text-blue-500" size={40} />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-screen justify-center items-center bg-gray-50 p-6">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
+          <h2 className="text-red-700 font-bold text-lg mb-2">데이터 로드 실패</h2>
+          <p className="text-red-600 text-sm mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            다시 시도
+          </button>
+        </div>
       </div>
     );
   }
