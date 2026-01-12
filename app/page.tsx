@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { MapPin, Home, Ticket, User, Menu, Loader2, Timer } from 'lucide-react';
 import PriceCard from '@/components/PriceCard';
 import WeatherWidget from '@/components/WeatherWidget';
+import BookingModal from '@/components/BookingModal';
 import { calculatePrice, isPanicMode, shouldBlockTeeTime } from '@/utils/pricingEngine';
 import { supabase } from '@/lib/supabase';
 import type { WeatherData, LocationInfo, UserSegment, TeeTimeStatus } from '@/types/database';
@@ -102,6 +103,8 @@ export default function MainPage() {
   const [panicTeeTime, setPanicTeeTime] = useState<any>(null);
   const [timeLeft, setTimeLeft] = useState(59 * 60 + 59);
   const [error, setError] = useState<string | null>(null);
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  const [selectedTeeTime, setSelectedTeeTime] = useState<any>(null);
 
   useEffect(() => {
     // Fetch real data from Supabase
@@ -127,9 +130,12 @@ export default function MainPage() {
           .order('tee_off_time', { ascending: true })
           .limit(10);
 
-        if (fetchError) throw fetchError;
+        // Log error but don't throw - fall back to mock data instead
+        if (fetchError) {
+          console.warn('Supabase query failed, using mock data:', fetchError.message);
+        }
 
-        // Fallback to mock data if no real data exists
+        // Fallback to mock data if no real data exists or if there was an error
         const dataSource = teeTimes && teeTimes.length > 0 ? teeTimes : MOCK_TEE_TIMES.map(mock => ({
           id: mock.id,
           tee_off_time: mock.teeOffTime.toISOString(),
@@ -278,7 +284,14 @@ export default function MainPage() {
             </div>
             <p className="text-xs text-gray-400 line-through mb-4">정가 {panicTeeTime.basePrice.toLocaleString()}원</p>
 
-            <button className="w-full bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition-colors shadow-lg active:scale-95">
+            <button
+              onClick={() => {
+                setSelectedTeeTime(panicTeeTime);
+                setShowBookingModal(true);
+                setShowPanic(false);
+              }}
+              className="w-full bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition-colors shadow-lg active:scale-95"
+            >
               ⚡️ 지금 바로 잡기
             </button>
           </div>
@@ -326,7 +339,12 @@ export default function MainPage() {
               finalPrice={teeTime.finalPrice}
               reasons={teeTime.reasons}
               status={teeTime.status}
-              onClick={() => console.log('클릭:', teeTime.id)}
+              onClick={() => {
+                if (teeTime.status === 'OPEN') {
+                  setSelectedTeeTime(teeTime);
+                  setShowBookingModal(true);
+                }
+              }}
             />
           ))}
         </div>
@@ -338,6 +356,24 @@ export default function MainPage() {
         <button className="flex flex-col items-center hover:text-black"><User size={24} className="mb-1" />MY</button>
         <button className="flex flex-col items-center hover:text-black"><Menu size={24} className="mb-1" />메뉴</button>
       </nav>
+
+      {/* Booking Modal */}
+      {selectedTeeTime && (
+        <BookingModal
+          isOpen={showBookingModal}
+          onClose={() => {
+            setShowBookingModal(false);
+            setSelectedTeeTime(null);
+          }}
+          teeTime={selectedTeeTime}
+          userId={MOCK_USER.id}
+          userSegment={MOCK_USER.segment}
+          onSuccess={() => {
+            // Refresh tee times after successful booking
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 }
