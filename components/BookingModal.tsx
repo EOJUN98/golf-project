@@ -82,14 +82,26 @@ export default function BookingModal({
         );
 
         // Step 4: Wait for widget to fully render in DOM (critical!)
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Step 5: Verify widget is actually in DOM
-        const widgetElement = document.querySelector('#payment-widget iframe');
-        if (!widgetElement) {
-          console.warn('Widget iframe not found, waiting longer...');
+        let widgetElement = document.querySelector('#payment-widget iframe');
+        let retries = 0;
+        const maxRetries = 5;
+
+        while (!widgetElement && retries < maxRetries) {
+          console.warn(`Widget iframe not found (attempt ${retries + 1}/${maxRetries}), waiting...`);
           await new Promise(resolve => setTimeout(resolve, 500));
+          widgetElement = document.querySelector('#payment-widget iframe');
+          retries++;
         }
+
+        if (!widgetElement) {
+          console.error('Widget iframe never appeared after multiple retries');
+          throw new Error('결제 위젯 로딩 실패: iframe이 생성되지 않았습니다.');
+        }
+
+        console.log('✅ Payment widget iframe found and ready');
 
         // Step 6: Mark as ready
         setPaymentWidget(widget);
@@ -110,21 +122,29 @@ export default function BookingModal({
   }, [isOpen, userId, teeTime.finalPrice]);
 
   const handlePayment = async () => {
+    console.log('💳 Payment button clicked');
+    console.log('Widget ready state:', { paymentWidget: !!paymentWidget, isWidgetReady });
+
     if (!paymentWidget || !isWidgetReady) {
+      console.error('❌ Widget not ready');
       setError('결제 위젯이 준비되지 않았습니다. 잠시만 기다려주세요.');
       return;
     }
 
     // Double-check widget is actually ready
     const widgetElement = document.querySelector('#payment-widget iframe');
+    console.log('Widget iframe check:', !!widgetElement);
+
     if (!widgetElement) {
+      console.error('❌ Widget iframe not found in DOM');
       setError('결제 위젯을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
       return;
     }
 
     try {
       // Extra safety: Small delay before payment request
-      await new Promise(resolve => setTimeout(resolve, 300));
+      console.log('⏳ Waiting 500ms before payment request...');
+      await new Promise(resolve => setTimeout(resolve, 500));
 
       // Generate unique order ID with embedded metadata
       const orderId = `ORD-${Date.now()}-${userId}-${teeTime.id}`;
@@ -147,6 +167,8 @@ export default function BookingModal({
       };
       sessionStorage.setItem('paymentMetadata', JSON.stringify(metadata));
 
+      console.log('🚀 Requesting payment with orderId:', orderId);
+
       // Request payment
       await paymentWidget.requestPayment({
         orderId,
@@ -155,8 +177,10 @@ export default function BookingModal({
         successUrl: `${window.location.origin}/payment/success`,
         failUrl: `${window.location.origin}/payment/fail`,
       });
+
+      console.log('✅ Payment request sent successfully');
     } catch (err) {
-      console.error('Payment request failed:', err);
+      console.error('❌ Payment request failed:', err);
       const errorMessage = err instanceof Error ? err.message : '결제 요청에 실패했습니다.';
 
       // If still getting render error, tell user to wait
