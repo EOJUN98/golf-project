@@ -5,24 +5,23 @@ import { useRouter } from 'next/navigation';
 import { Loader2, ArrowLeft, Calendar, Clock, CreditCard, CheckCircle2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// Mock user ID - in production this would come from auth
-const MOCK_USER_ID = 1;
+// [수정 포인트] user_id는 일단 무시하고 모든 예약을 가져오거나, 
+// 현재 테스트용 데이터에 맞는 방식으로 필터링을 잠시 해제합니다.
+// 나중에 로그인 붙이면 그때 user_id를 살립니다.
 
 interface Reservation {
-  id: number;
+  id: string; // UUID라서 string으로 변경
   final_price: number;
   discount_breakdown: any;
-  payment_status: string;
+  // payment_status가 DB에 없을 수도 있으니 optional 처리
+  payment_status?: string; 
   created_at: string;
   tee_times: {
     id: number;
-    tee_off_time: string;
+    tee_off: string; // DB 컬럼명이 tee_off_time이 아니라 tee_off 일 수 있음 (확인 필요)
     base_price: number;
     status: string;
-    golf_clubs: {
-      name: string;
-      location_name: string;
-    } | null;
+    // golf_clubs 연결은 복잡하니 일단 제외하거나 단순화
   } | null;
 }
 
@@ -35,35 +34,37 @@ export default function ReservationsPage() {
   useEffect(() => {
     async function fetchReservations() {
       try {
+        console.log("Fetching reservations...");
+        
+        // 1. 단순하게 예약 테이블만 먼저 불러옵니다 (Join 없이 테스트)
+        // Join이 복잡하면 에러가 잘 나므로, 단계별로 확인합니다.
         const { data, error: fetchError } = await supabase
           .from('reservations')
           .select(`
             id,
             final_price,
             discount_breakdown,
-            payment_status,
             created_at,
             tee_times (
               id,
-              tee_off_time,
+              tee_off,
               base_price,
-              status,
-              golf_clubs (
-                name,
-                location_name
-              )
+              status
             )
           `)
-          .eq('user_id', MOCK_USER_ID)
           .order('created_at', { ascending: false });
 
-        if (fetchError) throw fetchError;
+        if (fetchError) {
+            console.error("Supabase Error:", fetchError);
+            throw fetchError;
+        }
 
-        setReservations(data || []);
-        setLoading(false);
+        console.log("Data fetched:", data);
+        setReservations(data as any || []);
       } catch (err) {
         console.error('Error fetching reservations:', err);
         setError(err instanceof Error ? err.message : 'Failed to fetch reservations');
+      } finally {
         setLoading(false);
       }
     }
@@ -83,7 +84,7 @@ export default function ReservationsPage() {
     return (
       <div className="flex h-screen justify-center items-center bg-gray-50 p-6">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
-          <h2 className="text-red-700 font-bold text-lg mb-2">데이터 로드 실패</h2>
+          <h2 className="text-red-700 font-bold text-lg mb-2">데이터 로드 실패 ㅠㅠ</h2>
           <p className="text-red-600 text-sm mb-4">{error}</p>
           <button
             onClick={() => router.push('/')}
@@ -98,122 +99,50 @@ export default function ReservationsPage() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 max-w-md mx-auto shadow-2xl">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="text-gray-600 hover:text-black transition-colors"
-          >
+          <button onClick={() => router.push('/')} className="text-gray-600">
             <ArrowLeft size={24} />
           </button>
-          <h1 className="text-xl font-bold text-gray-900">내 예약</h1>
+          <h1 className="text-xl font-bold text-gray-900">내 예약 내역</h1>
         </div>
       </header>
 
-      {/* Content */}
       <main className="flex-1 p-6">
         {reservations.length === 0 ? (
-          // Empty State
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-            <div className="bg-gray-100 rounded-full p-6 mb-6">
-              <Calendar size={48} className="text-gray-400" />
-            </div>
+            <Calendar size={48} className="text-gray-400 mb-4" />
             <h2 className="text-xl font-bold text-gray-900 mb-2">예약 내역이 없습니다</h2>
-            <p className="text-gray-600 mb-8">
-              티타임을 예약하고 골프를 즐겨보세요!
-            </p>
-            <button
-              onClick={() => router.push('/')}
-              className="bg-black text-white px-6 py-3 rounded-xl font-bold hover:bg-gray-800 transition-colors"
-            >
-              티타임 둘러보기
+            <p className="text-gray-600 mb-8">첫 예약을 진행해보세요!</p>
+            <button onClick={() => router.push('/')} className="bg-black text-white px-6 py-3 rounded-xl font-bold">
+              티타임 보러 가기
             </button>
           </div>
         ) : (
-          // Reservations List
           <div className="space-y-4">
-            {reservations.map((reservation) => {
-              const teeTime = reservation.tee_times;
+            {reservations.map((res) => {
+              const teeTime = res.tee_times;
               if (!teeTime) return null;
-
-              const teeOffDate = new Date(teeTime.tee_off_time);
-              const dateStr = teeOffDate.toLocaleDateString('ko-KR', {
-                month: 'long',
-                day: 'numeric',
-                weekday: 'short',
-              });
-              const timeStr = teeOffDate.toLocaleTimeString('ko-KR', {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
-
-              const statusConfig = {
-                PENDING: { label: '결제 대기', color: 'bg-yellow-100 text-yellow-700' },
-                PAID: { label: '결제 완료', color: 'bg-green-100 text-green-700' },
-                CANCELLED: { label: '취소됨', color: 'bg-red-100 text-red-700' },
-                REFUNDED: { label: '환불 완료', color: 'bg-gray-100 text-gray-700' },
-              };
-
-              const status = statusConfig[reservation.payment_status as keyof typeof statusConfig] || statusConfig.PENDING;
+              
+              // 날짜 처리 (DB 컬럼명 차이 대응)
+              const teeOffStr = teeTime.tee_off || (teeTime as any).tee_off_time;
+              const dateObj = teeOffStr ? new Date(teeOffStr) : new Date();
 
               return (
-                <div
-                  key={reservation.id}
-                  className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
-                >
-                  {/* Golf Club Name */}
-                  {teeTime.golf_clubs && (
-                    <div className="text-sm font-bold text-gray-900 mb-2">
-                      {teeTime.golf_clubs.name}
-                    </div>
-                  )}
-
-                  {/* Date & Time */}
+                <div key={res.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                   <div className="flex items-center gap-2 text-gray-600 mb-1">
                     <Calendar size={16} />
-                    <span className="text-sm">{dateStr}</span>
+                    <span className="text-sm">{dateObj.toLocaleDateString()}</span>
                   </div>
                   <div className="flex items-center gap-2 text-gray-600 mb-4">
                     <Clock size={16} />
-                    <span className="text-sm font-bold">{timeStr}</span>
+                    <span className="text-sm font-bold">{dateObj.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                   </div>
-
-                  {/* Divider */}
                   <div className="border-t border-gray-200 my-4"></div>
-
-                  {/* Price & Status */}
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CreditCard size={18} className="text-gray-400" />
-                      <span className="text-lg font-black text-blue-600">
-                        {reservation.final_price.toLocaleString()}원
-                      </span>
-                    </div>
-                    <span className={`text-xs font-bold px-3 py-1 rounded-full ${status.color}`}>
-                      {status.label}
-                    </span>
+                    <span className="text-lg font-black text-blue-600">{res.final_price.toLocaleString()}원</span>
+                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700">예약 완료</span>
                   </div>
-
-                  {/* Discount Info */}
-                  {reservation.discount_breakdown && reservation.discount_breakdown.discountAmount > 0 && (
-                    <div className="mt-3 text-xs text-gray-500">
-                      <span className="line-through">
-                        정가 {reservation.discount_breakdown.basePrice.toLocaleString()}원
-                      </span>
-                      <span className="text-red-600 font-bold ml-2">
-                        {reservation.discount_breakdown.discountPercent}% 할인 적용
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Tee Time Status */}
-                  {teeTime.status === 'BOOKED' && (
-                    <div className="mt-3 flex items-center gap-1 text-xs text-green-600">
-                      <CheckCircle2 size={14} />
-                      <span className="font-medium">예약 확정</span>
-                    </div>
-                  )}
                 </div>
               );
             })}

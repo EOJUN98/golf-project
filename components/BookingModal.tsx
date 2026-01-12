@@ -1,9 +1,8 @@
-// ==================================================================
-// Booking Modal Component
-// ==================================================================
+"use client";
 
-import React, { useState } from 'react';
-import { X, Check, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Loader2, AlertCircle } from 'lucide-react';
+import { loadPaymentWidget, PaymentWidgetInstance } from '@tosspayments/payment-widget-sdk';
 
 interface BookingModalProps {
   isOpen: boolean;
@@ -34,48 +33,86 @@ export default function BookingModal({
   userSegment,
   onSuccess,
 }: BookingModalProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentWidget, setPaymentWidget] = useState<PaymentWidgetInstance | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+
+  // Initialize Toss Payment Widget
+  useEffect(() => {
+    if (!isOpen) return;
+
+    async function initializeWidget() {
+      try {
+        const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY;
+
+        if (!clientKey) {
+          throw new Error('Toss Client Key not found');
+        }
+
+        const widget = await loadPaymentWidget(clientKey, userId.toString());
+        setPaymentWidget(widget);
+        setIsLoading(false);
+      } catch (err) {
+        console.error('Failed to load payment widget:', err);
+        setError('결제 위젯을 불러오는데 실패했습니다.');
+        setIsLoading(false);
+      }
+    }
+
+    initializeWidget();
+  }, [isOpen, userId]);
+
+  // Render payment widget when ready
+  useEffect(() => {
+    if (!paymentWidget || !isOpen) return;
+
+    try {
+      paymentWidget.renderPaymentMethods('#payment-widget', teeTime.finalPrice);
+    } catch (err) {
+      console.error('Failed to render payment widget:', err);
+      setError('결제 위젯 렌더링에 실패했습니다.');
+    }
+  }, [paymentWidget, isOpen, teeTime.finalPrice]);
 
   if (!isOpen) return null;
 
-  const handleBooking = async () => {
-    setIsSubmitting(true);
-    setError(null);
+  const handlePayment = async () => {
+    if (!paymentWidget) {
+      setError('결제 위젯이 준비되지 않았습니다.');
+      return;
+    }
 
     try {
-      const response = await fetch('/api/reservations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          teeTimeId: teeTime.id,
+      // Generate unique order ID with metadata
+      const orderId = `ORD-${Date.now()}-${userId}-${teeTime.id}`;
+
+      // Store metadata in sessionStorage for success page
+      const metadata = {
+        userId,
+        teeTimeId: teeTime.id,
+        finalPrice: teeTime.finalPrice,
+        discountBreakdown: {
+          basePrice: teeTime.basePrice,
           finalPrice: teeTime.finalPrice,
-          discountBreakdown: {
-            basePrice: teeTime.basePrice,
-            finalPrice: teeTime.finalPrice,
-            discountAmount: teeTime.basePrice - teeTime.finalPrice,
-            discountPercent: Math.round(((teeTime.basePrice - teeTime.finalPrice) / teeTime.basePrice) * 100),
-            reasons: teeTime.reasons,
-            userSegment,
-          },
-        }),
+          discountAmount: teeTime.basePrice - teeTime.finalPrice,
+          discountPercent: Math.round(((teeTime.basePrice - teeTime.finalPrice) / teeTime.basePrice) * 100),
+          reasons: teeTime.reasons,
+          userSegment,
+        },
+      };
+      sessionStorage.setItem('paymentMetadata', JSON.stringify(metadata));
+
+      // Request payment
+      await paymentWidget.requestPayment({
+        orderId,
+        orderName: `${teeTime.teeOffTime.toLocaleDateString()} ${teeTime.time} 티타임`,
+        customerName: `User ${userId}`,
+        successUrl: `${window.location.origin}/payment/success`,
+        failUrl: `${window.location.origin}/payment/fail`,
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Booking failed');
-      }
-
-      setSuccess(true);
-      setTimeout(() => {
-        onSuccess();
-        onClose();
-      }, 1500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create reservation');
-      setIsSubmitting(false);
+      console.error('Payment request failed:', err);
+      setError(err instanceof Error ? err.message : '결제 요청에 실패했습니다.');
     }
   };
 
@@ -84,152 +121,104 @@ export default function BookingModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in duration-200">
+      <div className="bg-white rounded-2xl max-w-md w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl animate-in zoom-in duration-200">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">예약 확인</h2>
+          <h2 className="text-2xl font-bold text-gray-900">결제하기</h2>
           <button
             onClick={onClose}
-            disabled={isSubmitting}
-            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+            className="text-gray-400 hover:text-gray-600 transition-colors"
           >
             <X size={24} />
           </button>
         </div>
 
-        {/* Success State */}
-        {success && (
-          <div className="text-center py-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-              <Check size={32} className="text-green-600" />
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">예약 완료!</h3>
-            <p className="text-gray-600">티타임이 성공적으로 예약되었습니다.</p>
+        {/* Booking Summary */}
+        <div className="bg-blue-50 rounded-xl p-4 mb-6">
+          <div className="text-sm text-gray-600 mb-2">
+            {teeTime.teeOffTime.toLocaleDateString('ko-KR', {
+              month: 'long',
+              day: 'numeric',
+              weekday: 'short',
+            })}
           </div>
-        )}
+          <div className="text-xl font-bold text-gray-900 mb-3">
+            {teeTime.time}
+          </div>
 
-        {/* Error State */}
-        {error && !success && (
+          {/* Weather */}
+          {teeTime.weather.sky && (
+            <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+              <span>{teeTime.weather.sky}</span>
+              {teeTime.weather.temperature && <span>• {teeTime.weather.temperature}°C</span>}
+              <span>• 강수확률 {teeTime.weather.rainProb}%</span>
+            </div>
+          )}
+
+          {/* Pricing */}
+          <div className="border-t border-blue-200 pt-3 mt-3">
+            <div className="flex justify-between text-sm text-gray-600 mb-1">
+              <span>정가</span>
+              <span className="line-through">{teeTime.basePrice.toLocaleString()}원</span>
+            </div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between text-sm text-red-600 font-bold mb-2">
+                <span>할인 ({discountPercent}%)</span>
+                <span>-{discountAmount.toLocaleString()}원</span>
+              </div>
+            )}
+            <div className="flex justify-between text-lg font-black text-blue-600">
+              <span>최종 금액</span>
+              <span>{teeTime.finalPrice.toLocaleString()}원</span>
+            </div>
+          </div>
+
+          {/* Discount Reasons */}
+          {teeTime.reasons.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {teeTime.reasons.map((reason, idx) => (
+                <span
+                  key={idx}
+                  className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full font-medium"
+                >
+                  {reason}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Payment Widget Container */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="animate-spin text-blue-600" size={40} />
+          </div>
+        ) : error ? (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4 flex items-start gap-3">
-            <AlertCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
+            <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
             <div>
-              <h4 className="font-bold text-red-700 mb-1">예약 실패</h4>
-              <p className="text-red-600 text-sm">{error}</p>
+              <p className="text-red-800 font-bold text-sm mb-1">오류 발생</p>
+              <p className="text-red-700 text-sm">{error}</p>
             </div>
           </div>
+        ) : (
+          <div id="payment-widget" className="mb-4" />
         )}
 
-        {/* Booking Details */}
-        {!success && (
-          <>
-            <div className="bg-gray-50 rounded-lg p-4 mb-6 space-y-3">
-              {/* Tee Time */}
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600 font-medium">티오프 시간</span>
-                <span className="text-gray-900 font-bold text-lg">{teeTime.time}</span>
-              </div>
-
-              {/* Date */}
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600 font-medium">날짜</span>
-                <span className="text-gray-900">
-                  {teeTime.teeOffTime.toLocaleDateString('ko-KR', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    weekday: 'short',
-                  })}
-                </span>
-              </div>
-
-              {/* Weather */}
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600 font-medium">날씨</span>
-                <span className="text-gray-900">
-                  {teeTime.weather.sky} {teeTime.weather.temperature}°C · 강수확률 {teeTime.weather.rainProb}%
-                </span>
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-gray-200 my-3"></div>
-
-              {/* Original Price */}
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600 font-medium">정가</span>
-                <span className="text-gray-400 line-through">{teeTime.basePrice.toLocaleString()}원</span>
-              </div>
-
-              {/* Discount */}
-              <div className="flex justify-between items-center">
-                <span className="text-gray-600 font-medium">할인</span>
-                <span className="text-red-600 font-bold">-{discountAmount.toLocaleString()}원 ({discountPercent}%)</span>
-              </div>
-
-              {/* Discount Reasons */}
-              {teeTime.reasons.length > 0 && (
-                <div className="pt-2">
-                  <div className="flex flex-wrap gap-1.5">
-                    {teeTime.reasons.map((reason, idx) => (
-                      <span
-                        key={idx}
-                        className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium"
-                      >
-                        {reason}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Divider */}
-              <div className="border-t border-gray-200 my-3"></div>
-
-              {/* Final Price */}
-              <div className="flex justify-between items-center">
-                <span className="text-gray-900 font-bold text-lg">최종 결제 금액</span>
-                <span className="text-blue-600 font-black text-2xl">{teeTime.finalPrice.toLocaleString()}원</span>
-              </div>
-            </div>
-
-            {/* User Segment Badge */}
-            <div className="mb-6 flex items-center justify-center gap-2">
-              <span className="text-sm text-gray-600">회원 등급:</span>
-              <span className="bg-gradient-to-r from-purple-600 to-blue-600 text-white px-3 py-1 rounded-full text-sm font-bold">
-                {userSegment}
-              </span>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="flex-1 bg-gray-200 text-gray-700 py-4 rounded-xl font-bold text-lg hover:bg-gray-300 transition-colors disabled:opacity-50"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleBooking}
-                disabled={isSubmitting}
-                className="flex-1 bg-black text-white py-4 rounded-xl font-bold text-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 size={20} className="animate-spin" />
-                    예약 중...
-                  </>
-                ) : (
-                  '예약 확정'
-                )}
-              </button>
-            </div>
-
-            {/* Terms */}
-            <p className="text-xs text-gray-500 text-center mt-4">
-              예약 확정 시 <span className="underline">취소 및 환불 규정</span>에 동의하게 됩니다.
-            </p>
-          </>
+        {/* Payment Button */}
+        {!isLoading && !error && (
+          <button
+            onClick={handlePayment}
+            className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition-colors shadow-lg active:scale-95"
+          >
+            {teeTime.finalPrice.toLocaleString()}원 결제하기
+          </button>
         )}
+
+        {/* Terms */}
+        <p className="text-xs text-gray-500 text-center mt-4">
+          예약 확정 후 취소 시 환불 정책이 적용됩니다.
+        </p>
       </div>
     </div>
   );
