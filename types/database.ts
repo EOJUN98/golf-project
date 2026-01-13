@@ -182,3 +182,29 @@ export interface LocationInfo {
   /** 15km 이내 여부 */
   isNearby: boolean;
 }
+
+// ------------------------------------------------------------------
+// 6. Supabase Database 타입 (자동 생성 스타일)
+// ------------------------------------------------------------------
+
+export interface Database {
+  public: {
+    Tables: {
+      users: {
+        Row: User;
+        Insert: Omit<User, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      tee_times: {
+        Row: TeeTime;
+        Insert: Omit<TeeTime, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<TeeTime, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      reservations: {
+        Row: Reservation;
+        Insert: Omit<Reservation, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<Reservation, 'id' | 'created_at' | 'updated_at'>>;
+      };
+    };
+  };
+}

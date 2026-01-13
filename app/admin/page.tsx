@@ -40,15 +40,17 @@ export default function AdminPage() {
 
       if (timeError) throw timeError;
 
+      const teeTimesData = times as TeeTime[] | null;
+
       // 매출 통계
       const { data: res } = await supabase
         .from('reservations')
         .select('final_price');
-      
-      const total = res?.reduce((acc, curr) => acc + curr.final_price, 0) || 0;
-      const booked = times?.filter(t => t.status === 'BOOKED').length || 0;
 
-      setTeeTimes(times || []);
+      const total = res?.reduce((acc: number, curr: any) => acc + (curr.final_price || 0), 0) || 0;
+      const booked = teeTimesData?.filter(t => t.status === 'BOOKED').length || 0;
+
+      setTeeTimes(teeTimesData || []);
       setStats({ totalRevenue: total, bookedCount: booked });
 
     } catch (err) {
@@ -71,7 +73,7 @@ export default function AdminPage() {
     const newStatus = currentStatus === 'OPEN' ? 'BLOCKED' : 'OPEN';
 
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('tee_times')
         .update({ status: newStatus })
         .eq('id', id);
@@ -79,7 +81,7 @@ export default function AdminPage() {
       if (error) throw error;
 
       // 화면 즉시 갱신 (낙관적 업데이트)
-      setTeeTimes(prev => prev.map(t => 
+      setTeeTimes(prev => prev.map(t =>
         t.id === id ? { ...t, status: newStatus as any } : t
       ));
 

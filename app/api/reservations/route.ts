@@ -25,22 +25,24 @@ export async function POST(request: NextRequest) {
       .eq('id', teeTimeId)
       .single();
 
-    if (teeTimeError) {
+    const teeTimeData = teeTime as { id: number; status: string } | null;
+
+    if (teeTimeError || !teeTimeData) {
       return NextResponse.json(
-        { error: 'Tee time not found', details: teeTimeError.message },
+        { error: 'Tee time not found', details: teeTimeError?.message },
         { status: 404 }
       );
     }
 
-    if (teeTime.status !== 'OPEN') {
+    if (teeTimeData.status !== 'OPEN') {
       return NextResponse.json(
-        { error: 'Tee time is no longer available', status: teeTime.status },
+        { error: 'Tee time is no longer available', status: teeTimeData.status },
         { status: 409 }
       );
     }
 
     // Create reservation
-    const { data: reservation, error: reservationError } = await supabase
+    const { data: reservation, error: reservationError } = await (supabase as any)
       .from('reservations')
       .insert({
         user_id: userId,
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update tee time status to BOOKED
-    const { error: updateError } = await supabase
+    const { error: updateError } = await (supabase as any)
       .from('tee_times')
       .update({
         status: 'BOOKED',
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       console.error('Tee time update error:', updateError);
       // Rollback reservation if tee time update fails
-      await supabase.from('reservations').delete().eq('id', reservation.id);
+      await (supabase as any).from('reservations').delete().eq('id', reservation.id);
       return NextResponse.json(
         { error: 'Failed to update tee time status', details: updateError.message },
         { status: 500 }

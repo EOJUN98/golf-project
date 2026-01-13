@@ -250,14 +250,16 @@ export default function MainPage() {
         </div>
       </div>
 
-      <BookingModal
-        isOpen={isBookingModalOpen}
-        onClose={() => setIsBookingModalOpen(false)}
-        teeTime={selectedTeeTime}
-        userId={1}
-        userSegment={userInfo?.segment || 'SMART'}
-        onSuccess={handleBookingSuccess}
-      />
+      {selectedTeeTime && (
+        <BookingModal
+          isOpen={isBookingModalOpen}
+          onClose={() => setIsBookingModalOpen(false)}
+          teeTime={selectedTeeTime}
+          userId={1}
+          userSegment={userInfo?.segment || 'SMART'}
+          onSuccess={handleBookingSuccess}
+        />
+      )}
 
       <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 flex justify-around py-4 text-xs font-medium text-gray-400 z-50 pb-safe">
         <button className="flex flex-col items-center text-black"><Home size={24} className="mb-1" />홈</button>

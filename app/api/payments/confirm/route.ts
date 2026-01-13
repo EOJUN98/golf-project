@@ -67,7 +67,9 @@ export async function POST(request: NextRequest) {
       .eq('id', teeTimeId)
       .single();
 
-    if (teeTimeError || !teeTime) {
+    const teeTimeData = teeTime as { id: number; status: string } | null;
+
+    if (teeTimeError || !teeTimeData) {
       console.error('Tee time not found:', teeTimeError);
       // Payment succeeded but booking failed - should trigger refund in production
       return NextResponse.json(
@@ -80,22 +82,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (teeTime.status !== 'OPEN') {
-      console.error('Tee time no longer available:', teeTime.status);
+    if (teeTimeData.status !== 'OPEN') {
+      console.error('Tee time no longer available:', teeTimeData.status);
       // Payment succeeded but tee time taken - should trigger refund
       return NextResponse.json(
         {
           error: 'Tee time is no longer available',
           warning: 'Payment succeeded but tee time was already booked. Contact support for refund.',
           paymentKey,
-          status: teeTime.status
+          status: teeTimeData.status
         },
         { status: 409 }
       );
     }
 
     // Step 3: Create reservation in database
-    const { data: reservation, error: reservationError } = await supabase
+    const { data: reservation, error: reservationError } = await (supabase as any)
       .from('reservations')
       .insert({
         user_id: userId,
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 4: Update tee time status to BOOKED
-    const { error: updateError } = await supabase
+    const { error: updateError } = await (supabase as any)
       .from('tee_times')
       .update({
         status: 'BOOKED',
@@ -136,7 +138,7 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       console.error('Tee time update error:', updateError);
       // Rollback: Delete the reservation
-      await supabase.from('reservations').delete().eq('id', reservation.id);
+      await (supabase as any).from('reservations').delete().eq('id', reservation.id);
 
       return NextResponse.json(
         {

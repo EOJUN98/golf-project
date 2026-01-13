@@ -1,9 +1,10 @@
 "use client";
 
+import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertCircle, Home } from 'lucide-react';
 
-export default function PaymentFailPage() {
+function PaymentFailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -64,5 +65,17 @@ export default function PaymentFailPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PaymentFailPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-gray-500">로딩 중...</div>
+      </div>
+    }>
+      <PaymentFailContent />
+    </Suspense>
   );
 }
