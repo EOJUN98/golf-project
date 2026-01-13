@@ -12,7 +12,7 @@ export default function MainPage() {
   const [loading, setLoading] = useState(true);
   const [userInfo, setUserInfo] = useState<any>(null);
 
-  // 🔥 [NEW] 1부/2부/3부 탭 상태 (기본값: 1부)
+  // 1부/2부/3부 탭 상태
   const [selectedPart, setSelectedPart] = useState<'part1' | 'part2' | 'part3'>('part1');
   
   // Booking modal state
@@ -23,7 +23,6 @@ export default function MainPage() {
   const [showPanic, setShowPanic] = useState(false);
   const [timeLeft, setTimeLeft] = useState(59 * 60 + 59);
 
-  // Fetch tee times when date changes
   useEffect(() => {
     async function fetchTeeTimesForDate() {
       setLoading(true);
@@ -31,16 +30,13 @@ export default function MainPage() {
         const data = await getTeeTimesByDate(selectedDate);
         setTeeTimes(data);
         
-        // 날짜가 바뀌면 1부로 초기화 (선택사항)
         setSelectedPart('part1');
         
-        // Mock user info
         setUserInfo({
           segment: 'PRESTIGE',
           isNearby: true,
         });
 
-        // Panic mode trigger
         if (data.length > 0 && Math.random() > 0.7) {
           setTimeout(() => setShowPanic(true), 2000);
         }
@@ -55,20 +51,17 @@ export default function MainPage() {
     fetchTeeTimesForDate();
   }, [selectedDate]);
 
-  // 🔥 [NEW] 선택된 '부'에 따라 티타임 필터링
   const filteredTeeTimes = useMemo(() => {
     return teeTimes.filter((time) => {
-      // Supabase의 tee_off는 ISO String이므로 Date 객체로 변환
       const hour = new Date(time.tee_off).getHours(); 
 
-      if (selectedPart === 'part1') return hour < 11;               // 1부: ~11시 전
-      if (selectedPart === 'part2') return hour >= 11 && hour < 17; // 2부: 11시 ~ 16시
-      if (selectedPart === 'part3') return hour >= 17;              // 3부: 17시 이후
+      if (selectedPart === 'part1') return hour < 11;               
+      if (selectedPart === 'part2') return hour >= 11 && hour < 17; 
+      if (selectedPart === 'part3') return hour >= 17;              
       return false;
     });
   }, [teeTimes, selectedPart]);
 
-  // Timer countdown
   useEffect(() => {
     const timer = setInterval(() => {
       setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
@@ -103,11 +96,8 @@ export default function MainPage() {
   return (
     <div className="flex flex-col h-screen bg-gray-50 max-w-md mx-auto shadow-2xl overflow-hidden relative">
       
-      {/* Panic Mode Popup (기존 유지) */}
       {showPanic && (
         <div className="absolute inset-0 z-50 bg-black/90 flex flex-col justify-center items-center p-6 animate-in fade-in zoom-in duration-300">
-           {/* ... Panic Mode UI 내용 생략 (기존 코드와 동일) ... */}
-           {/* (코드 길이 문제로 생략했으나, 원본 코드 그대로 두시면 됩니다!) */}
            <div className="absolute top-10 right-0 w-full flex justify-center">
             <div className="bg-red-600 text-white font-black px-4 py-1 rounded-full animate-pulse flex items-center gap-2 shadow-[0_0_15px_rgba(220,38,38,0.7)]">
               <Timer size={16} />
@@ -129,7 +119,6 @@ export default function MainPage() {
         </div>
       )}
 
-      {/* Header (기존 유지) */}
       <header className="bg-white p-4 flex justify-between items-center sticky top-0 z-20 shadow-sm">
         <h1 className="text-2xl font-black text-black tracking-tighter">TUGOL</h1>
         <div className="flex items-center gap-3">
@@ -140,10 +129,8 @@ export default function MainPage() {
         </div>
       </header>
 
-      {/* Scrollable Main Content Area */}
       <div className="flex-1 overflow-y-auto pb-24">
         
-        {/* Welcome Banner */}
         <div className="bg-black text-white p-5 m-4 rounded-2xl relative overflow-hidden cursor-pointer">
           <div className="relative z-10">
             <div className="text-xs font-bold text-yellow-400 mb-1">
@@ -159,14 +146,12 @@ export default function MainPage() {
           </div>
         </div>
 
-        {/* Date Selector (Sticky 적용) */}
         <div className="sticky top-0 bg-gray-50 z-10 pt-2">
            <DateSelector 
-  selectedDate={selectedDate} 
-  onDateChange={setSelectedDate} // 👈 이렇게 이름을 바꿔주세요!
-/>
+            selectedDate={selectedDate} 
+            onDateChange={setSelectedDate} 
+          />
         
-          {/* 🔥 [NEW] 1부/2부/3부 탭 */}
           <div className="px-4 py-2 bg-gray-50">
             <div className="flex gap-2 p-1 bg-white rounded-xl shadow-sm border border-gray-100">
               <button
@@ -197,7 +182,6 @@ export default function MainPage() {
           </div>
         </div>
 
-        {/* Tee Times List */}
         <div className="px-4 pt-2">
           <h3 className="font-bold text-gray-800 mb-3 text-lg flex items-center justify-between">
             <span>실시간 티타임</span>
@@ -229,7 +213,6 @@ export default function MainPage() {
                       <span className="text-xl font-black text-gray-900 font-mono tracking-tight">
                         {new Date(item.tee_off).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
-                      {/* 시간대 뱃지 */}
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${
                         selectedPart === 'part3' ? 'bg-purple-100 text-purple-700' :
                         selectedPart === 'part2' ? 'bg-orange-100 text-orange-700' :
@@ -239,17 +222,16 @@ export default function MainPage() {
                       </span>
                     </div>
                     <div className="text-right">
-                      {(item.finalPrice || item.price) < (item.basePrice || item.price) && (
+                      {item.finalPrice < item.basePrice && (
                         <div className="text-xs text-gray-400 line-through decoration-gray-400">
-                          {(item.basePrice || 280000).toLocaleString()}
+                          {item.basePrice.toLocaleString()}
                         </div>
                       )}
-                      <div className={`text-xl font-black ${(item.finalPrice || item.price) < (item.basePrice || 280000) ? 'text-red-500' : 'text-gray-900'}`}>
-                        {(item.finalPrice || item.price).toLocaleString()}<span className="text-sm font-normal text-gray-500">원</span>
+                      <div className={`text-xl font-black ${item.finalPrice < item.basePrice ? 'text-red-500' : 'text-gray-900'}`}>
+                        {item.finalPrice.toLocaleString()}<span className="text-sm font-normal text-gray-500">원</span>
                       </div>
                     </div>
                   </div>
-                  {/* 이유 태그 (있는 경우만 표시) */}
                   {item.reasons && item.reasons.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-gray-50">
                        <div className="flex flex-wrap gap-1">
@@ -268,20 +250,15 @@ export default function MainPage() {
         </div>
       </div>
 
-      {/* Booking Modal */}
-      {selectedTeeTime && (
-        <BookingModal
-          isOpen={isBookingModalOpen}
-          onClose={() => setIsBookingModalOpen(false)}
-          teeTime={selectedTeeTime}
-          // 기존 Mock 데이터 유지
-          userId={1}
-          userSegment={userInfo?.segment || 'SMART'}
-          onSuccess={handleBookingSuccess}
-        />
-      )}
+      <BookingModal
+        isOpen={isBookingModalOpen}
+        onClose={() => setIsBookingModalOpen(false)}
+        teeTime={selectedTeeTime}
+        userId={1}
+        userSegment={userInfo?.segment || 'SMART'}
+        onSuccess={handleBookingSuccess}
+      />
 
-      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 w-full max-w-md bg-white border-t border-gray-200 flex justify-around py-4 text-xs font-medium text-gray-400 z-50 pb-safe">
         <button className="flex flex-col items-center text-black"><Home size={24} className="mb-1" />홈</button>
         <button className="flex flex-col items-center hover:text-black"><Ticket size={24} className="mb-1" />예약</button>
