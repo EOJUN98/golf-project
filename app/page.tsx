@@ -162,9 +162,9 @@ export default function MainPage() {
         {/* Date Selector (Sticky 적용) */}
         <div className="sticky top-0 bg-gray-50 z-10 pt-2">
            <DateSelector 
-            selectedDate={selectedDate} 
-            onSelect={setSelectedDate} // Props 이름 변경 주의 (onDateChange -> onSelect)
-          />
+  selectedDate={selectedDate} 
+  onDateChange={setSelectedDate} // 👈 이렇게 이름을 바꿔주세요!
+/>
         
           {/* 🔥 [NEW] 1부/2부/3부 탭 */}
           <div className="px-4 py-2 bg-gray-50">
