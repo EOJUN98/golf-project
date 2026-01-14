@@ -1,0 +1,368 @@
+# TUGOL — Code RAG Snapshot (v1.0)
+
+## 목적
+이 문서는 LLM이 TUGOL 코드를 기반으로:
+- 분석
+- 리팩토링
+- 버그 탐지
+- 기능 추가
+- 타입/DB 확장
+- 패키지 교체
+- 테스트 생성
+- API 설계
+
+를 수행하기 위한 코드 중심 RAG 컨텍스트이다.
+
+---
+
+# 1. Code Execution Flow (Top-level Runtime)
+
+전체 실행 구조 흐름:
+
+```
+User → app/page.tsx
+      → (local state: date/part)
+      → fetch → getTeeTimesByDate()
+      → render TeeTime cards
+      → BookingModal → Toss Widget
+      → Toss redirect (/payment/success or /fail)
+      → confirm API → Supabase write
+      → page refresh/update
+```
+
+---
+
+# 2. Directory Overview (실제 코드 기준)
+
+```
+app/
+  page.tsx
+  layout.tsx
+  api/payments/confirm/route.ts
+  payment/success/page.tsx
+  payment/fail/page.tsx
+  admin/page.tsx   (조회 중심)
+
+components/
+  BookingModal.tsx
+  DateSelector.tsx
+
+utils/supabase/
+  queries.ts
+
+lib/
+  supabase.ts
+
+types/
+  database.ts
+```
+
+---
+
+# 3. Data Fetch Layer
+
+### 파일: `utils/supabase/queries.ts`
+
+핵심 함수:
+
+```ts
+export async function getTeeTimesByDate(date: Date): Promise<TeeTimeWithPricing[]> { ... }
+```
+
+입력:
+```
+Date (JS)
+```
+
+쿼리 로직:
+```
+SELECT * FROM tee_times
+WHERE tee_off BETWEEN startOfDay(date) AND endOfDay(date)
+ORDER BY tee_off ASC
+```
+
+출력 타입:
+
+```ts
+interface TeeTimeWithPricing {
+  id: number
+  teeOffTime: Date
+  basePrice: number
+  finalPrice: number
+  currency: string
+  status: 'OPEN' | 'BOOKED' | 'BLOCKED'
+  // optional: reasons: string[]
+}
+```
+
+역할:
+- DB raw → UI friendly view model 변환
+- Timezone 변환 처리 (UTC → KST)
+
+통찰:
+- DB는 `timestamptz` + UTC 저장
+- 프론트에서 Date 객체로 변환 (KST offset 고려 필요)
+
+---
+
+# 4. UI Rendering Layer
+
+### 파일: `app/page.tsx`
+
+핵심 상태:
+
+```ts
+selectedDate: Date
+selectedPart: 'part1' | 'part2' | 'part3'
+teeTimes: TeeTimeWithPricing[]
+```
+
+3부제 필터:
+
+```ts
+const filteredTimes = useMemo(() => {
+  if (selectedPart === 'part1') return times in 05~10:59
+  if (selectedPart === 'part2') return times in 11~16:59
+  if (selectedPart === 'part3') return times >= 17:00
+}, [selectedPart, teeTimes])
+```
+
+패닉(Panic) 모드:
+
+```
+Math.random() > 0.7 → showPanic = true
+```
+
+제한:
+- 현재 시점에서는 pseudo/연출 수준
+- LBS & T-60 조건 로직 없음
+
+---
+
+# 5. Date Component Layer
+
+파일: `components/DateSelector.tsx`
+
+기능:
+- 14일간 Date list 생성
+- Horizontal scroll chips
+- Today 강조
+- onClick → selectedDate 변경
+
+출력:
+```
+Date 객체 (JS)
+```
+
+---
+
+# 6. Booking + Toss Payment Layer
+
+파일: `components/BookingModal.tsx`
+
+핵심 의존성:
+
+```ts
+import { loadPaymentWidget, ANONYMOUS } from '@tosspayments/payment-widget-sdk'
+```
+
+Singleton 패턴 사용:
+
+```ts
+const widgetRef = useRef<PaymentWidget | null>(null)
+```
+
+Strict Mode 대응:
+- Dev 모드 double-init 방지
+- 초기에는 `reactStrictMode=false` 우회
+- 최종 해결: useRef + initialization guard
+
+토스 결제 호출 단계:
+
+```
+amount/user/order → Toss widget
+→ 성공 → redirect(`/payment/success?params`)
+→ 실패 → redirect(`/payment/fail`)
+```
+
+---
+
+# 7. Payment Redirect Layer
+
+파일: `app/payment/success/page.tsx`
+
+특징:
+- URL Query = `orderId`, `amount`, `paymentKey`
+- Next.js 15/16 문제 → Suspense 적용
+- CSR boundary 필수
+
+후속 처리:
+
+```
+POST /api/payments/confirm
+  {orderId,paymentKey,amount}
+```
+
+---
+
+# 8. Server Validation Layer
+
+파일: `app/api/payments/confirm/route.ts`
+
+입력(JSON):
+```
+{ orderId, paymentKey, amount }
+```
+
+스텝:
+
+```
+→ Toss 서버 승인 요청
+→ verify amount
+→ Supabase insert reservation
+→ Supabase update tee_times.status='BOOKED'
+→ return success response
+```
+
+실패 case:
+- rollback
+- DB write 금지
+
+---
+
+# 9. DB Schema Layer
+
+### tee_times
+
+```
+id (PK)
+tee_off (timestamptz)
+base_price (int)
+price (int)
+currency (text)
+status ('OPEN' | 'BOOKED' | 'BLOCKED')
+reserved_at (timestamptz)
+reserved_by (int)
+```
+
+### reservations
+
+```
+id (PK)
+tee_time_id (FK)
+user_id (FK)
+status ('CONFIRMED' | 'CANCELLED')
+amount (int)
+payment_key (text)
+payment_status ('PAID' | 'FAILED')
+receipt_url (text)
+```
+
+RLS: Dev 단계에서는 DISABLE
+
+---
+
+# 10. Types Layer
+
+`types/database.ts`:
+
+역할:
+- Supabase 타입 → TS 타입 매핑
+- TeeTimeWithPricing 인터페이스 공유
+
+통찰:
+- BookingModal과 Page간 타입 mismatch 해결됨
+
+---
+
+# 11. Timezone Layer
+
+DB:
+- timestamptz + UTC 저장
+
+프론트:
+- Date 객체 + Offset 변환
+
+문제 포인트:
+- Filtering 시 날짜 경계가 중요
+- startOfDay/endOfDay는 KST 기준 필요
+
+---
+
+# 12. 명확히 구현된 로직 vs 미구현 로직
+
+### 구현됨
+✔ Date → tee_times 조회  
+✔ 3부제 필터  
+✔ 동적 가격 UI  
+✔ Toss Widget  
+✔ redirect + confirm  
+✔ DB write + 상태 업데이트  
+✔ Vercel 배포  
+✔ Suspense fix
+
+### 미구현(기획만 존재)
+✖ 기상청 POP/RN1 기반 Pricing  
+✖ LBS 기반 Panic  
+✖ CRM Segment 할인  
+✖ Cancellation/Refund 정책  
+✖ Admin Override  
+✖ Yield 최적화  
+✖ Push/Alert  
+✖ RLS 정책  
+✖ Tier Pricing  
+✖ Booking window 제한  
+
+---
+
+# 13. Code Dependency Graph (간략)
+
+```
+page.tsx
+ ├── DateSelector
+ ├── getTeeTimesByDate()
+ │      └── Supabase
+ ├── filteredTimes (useMemo)
+ └── BookingModal
+         └── Toss Widget
+               └── redirect(success/fail)
+                     └── confirm API
+                           └── Supabase write
+```
+
+---
+
+# 14. LLM-Friendly TODO (기능 확장용)
+
+다음 개발에서 LLM이 적용 가능한 TODO:
+
+- [ ] getTeeTimesByDate timezone 정교화
+- [ ] Panic 모드 실제 사업로직 반영
+- [ ] 기상청 POP/RN1 → finalPrice 연결
+- [ ] CRM segment → 할인율 반영
+- [ ] Admin Override → price write-back
+- [ ] Cancellation/Refund → status 전이 모델링
+- [ ] RLS 정책 → prod 정책 설계
+- [ ] TeeTime generator → cron 또는 stored proc
+- [ ] Book conflict handling → transaction 보강
+- [ ] Reservation receipt 페이지 추가
+
+---
+
+# 15. LLM Retrieval Query Examples
+
+질문 예시:
+
+```
+"BookingModal 수정해서 가격 조정 기능 추가해줘"
+"기상청 POP API 받아서 finalPrice 계산 로직 붙여줘"
+"confirm API에 cancellation 로직 추가해줘"
+"Supabase RLS 정책 설계해줘"
+"DateSelector → server filtering 구조로 바꿔줘"
+"3부제 필터 시간을 config 기반으로 교체해줘"
+"Admin Override 구현해줘"
+```
+
+---
+
+# END OF FILE (Code-RAG v1.0)

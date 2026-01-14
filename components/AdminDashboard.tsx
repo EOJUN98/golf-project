@@ -1,0 +1,160 @@
+"use client";
+
+import React, { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import {
+  Settings,
+  Power,
+  CloudRain,
+  Ban,
+  RefreshCw
+} from 'lucide-react';
+import { TeeTime } from '@/types/database';
+
+interface AdminDashboardProps {
+  initialTeeTimes: TeeTime[];
+  stats: { totalRevenue: number; bookedCount: number };
+}
+
+export default function AdminDashboard({ initialTeeTimes, stats }: AdminDashboardProps) {
+  const [teeTimes, setTeeTimes] = useState<TeeTime[]>(initialTeeTimes);
+  const [processingId, setProcessingId] = useState<number | null>(null);
+
+  const toggleBlockStatus = async (id: number, currentStatus: string) => {
+    if (currentStatus === 'BOOKED') return alert('이미 예약된 건은 수정할 수 없습니다.');
+    
+    setProcessingId(id);
+    const newStatus = currentStatus === 'OPEN' ? 'BLOCKED' : 'OPEN';
+
+    try {
+      const { error } = await supabase
+        .from('tee_times')
+        .update({ status: newStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Optimistic Update
+      setTeeTimes(prev => prev.map(t =>
+        t.id === id ? { ...t, status: newStatus as any } : t
+      ));
+
+    } catch (err) {
+      alert('상태 변경 실패');
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleRefresh = () => {
+    window.location.reload();
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-900 text-white p-6">
+      {/* 헤더 */}
+      <div className="flex justify-between items-center mb-8 border-b border-gray-700 pb-4">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <Settings className="text-yellow-500" />
+            TUGOL Control Tower
+          </h1>
+          <p className="text-gray-400 text-sm mt-1">관리자 대시보드 (Supabase 연동됨)</p>
+        </div>
+        <div className="flex gap-4">
+            <div className="bg-gray-800 px-4 py-2 rounded-lg text-sm font-bold flex items-center border border-gray-600">
+                💰 총 매출: {stats.totalRevenue.toLocaleString()}원
+            </div>
+            <button 
+                onClick={handleRefresh}
+                className="bg-blue-900 px-4 py-2 rounded-lg text-sm font-bold flex items-center hover:bg-blue-800 transition-colors"
+            >
+                <RefreshCw size={16} className="mr-2" /> 새로고침
+            </button>
+        </div>
+      </div>
+
+      {/* 컨트롤 패널 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="p-6 rounded-2xl bg-gray-800 border border-green-500/50">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-bold text-green-400">🤖 AI Pricing Engine</h2>
+            <Power className="text-green-500" />
+          </div>
+          <p className="text-gray-400 text-sm">현재 알고리즘이 정상 작동 중입니다.</p>
+        </div>
+        <div className="p-6 rounded-2xl bg-gray-800 border border-gray-600 opacity-70">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-bold text-gray-400">🚨 Emergency Stop</h2>
+            <Ban className="text-gray-500" />
+          </div>
+          <p className="text-gray-500 text-sm">기능 준비 중입니다.</p>
+        </div>
+      </div>
+
+      {/* 티타임 관리 테이블 */}
+      <div className="bg-gray-800 rounded-2xl p-6 border border-gray-700">
+        <h2 className="text-xl font-bold mb-4 flex items-center">
+           ⛳️ 티타임 관리 (Live Data)
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="text-gray-400 border-b border-gray-700 text-sm">
+                <th className="p-3">시간</th>
+                <th className="p-3">날씨 정보</th>
+                <th className="p-3">기준 가격</th>
+                <th className="p-3">상태 관리</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teeTimes.map((item) => {
+                const timeStr = new Date(item.tee_off).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                // Mock weather check for display
+                const isRain = false; // Admin view doesn't calculate dynamic weather yet in this version
+
+                return (
+                  <tr key={item.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                    <td className="p-4 font-bold text-lg">{timeStr}</td>
+                    <td className="p-4 text-sm text-gray-400">
+                        {isRain ? (
+                            <span className="flex items-center text-blue-400 gap-1"><CloudRain size={14}/> 비 예보</span>
+                        ) : (
+                            <span className="text-gray-500">맑음</span>
+                        )}
+                    </td>
+                    <td className="p-4">{item.base_price.toLocaleString()}원</td>
+                    <td className="p-4">
+                        {item.status === 'BOOKED' ? (
+                            <span className="text-blue-400 font-bold flex items-center gap-1">
+                                ✅ 예약됨
+                            </span>
+                        ) : (
+                            <button
+                                onClick={() => toggleBlockStatus(item.id, item.status)}
+                                disabled={processingId === item.id}
+                                className={`px-3 py-1 rounded text-sm font-bold border transition-colors
+                                    ${item.status === 'BLOCKED' 
+                                        ? 'bg-red-900/50 text-red-400 border-red-500 hover:bg-red-900' 
+                                        : 'bg-green-900/30 text-green-400 border-green-600 hover:bg-green-900/50'
+                                    }`}
+                            >
+                                {processingId === item.id ? '처리중...' : (
+                                    item.status === 'BLOCKED' ? '⛔️ 차단 해제' : '🟢 판매 중'
+                                )}
+                            </button>
+                        )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {teeTimes.length === 0 && (
+              <div className="p-8 text-center text-gray-500">데이터가 없습니다.</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

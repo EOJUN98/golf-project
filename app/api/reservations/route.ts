@@ -1,69 +1,118 @@
 // ==================================================================
-// Reservations API Route
+// Reservations API Route (Secure)
+// Updated for V2 Pricing Engine
 // ==================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { calculateDynamicPrice, PricingContext, WeatherData as EngineWeatherData } from '@/utils/pricingEngine';
+import { getWeatherForDate } from '@/utils/supabase/queries';
+import { UserSegment as DBUserSegment } from '@/types/database';
+
+// Helper to map DB Weather to Engine Weather
+function mapWeatherToEngine(dbWeather: any): EngineWeatherData {
+  return {
+    sky: dbWeather.sky || '맑음',
+    temperature: dbWeather.temperature || 20,
+    rainProb: dbWeather.rainProb || 0,
+    windSpeed: dbWeather.windSpeed || 2, // Default wind speed
+  };
+}
+
+// Helper to map DB Segment to Engine Segment
+function mapSegmentToEngine(dbSegment: DBUserSegment): 'VIP' | 'Smart' | 'Base' | 'Cherry' {
+  switch (dbSegment) {
+    case 'PRESTIGE': return 'VIP';
+    case 'SMART': return 'Smart';
+    case 'CHERRY': return 'Cherry';
+    default: return 'Base';
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, teeTimeId, finalPrice, discountBreakdown } = body;
+    const { userId, teeTimeId, finalPrice: clientProvidedPrice } = body;
 
-    // Validation
-    if (!userId || !teeTimeId || !finalPrice) {
+    // 1. Validate Input
+    if (!userId || !teeTimeId || !clientProvidedPrice) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId, teeTimeId, finalPrice' },
+        { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Check if tee time is still available
+    // 2. Fetch Tee Time from DB
     const { data: teeTime, error: teeTimeError } = await supabase
       .from('tee_times')
-      .select('id, status')
+      .select('*')
       .eq('id', teeTimeId)
       .single();
 
-    const teeTimeData = teeTime as { id: number; status: string } | null;
-
-    if (teeTimeError || !teeTimeData) {
+    if (teeTimeError || !teeTime) {
       return NextResponse.json(
-        { error: 'Tee time not found', details: teeTimeError?.message },
+        { error: 'Tee time not found' },
         { status: 404 }
       );
     }
 
-    if (teeTimeData.status !== 'OPEN') {
+    if (teeTime.status !== 'OPEN') {
       return NextResponse.json(
-        { error: 'Tee time is no longer available', status: teeTimeData.status },
+        { error: 'Tee time is no longer available', status: teeTime.status },
         { status: 409 }
       );
     }
 
-    // Create reservation
-    const { data: reservation, error: reservationError } = await (supabase as any)
+    // 3. Security Check: Recalculate Price on Server (Prevent Tampering)
+    const teeOffDate = new Date(teeTime.tee_off);
+    const dbWeather = await getWeatherForDate(teeOffDate);
+    
+    // Map Context
+    const engineWeather = mapWeatherToEngine(dbWeather);
+    const dbUserSegment: DBUserSegment = 'PRESTIGE'; // Should fetch from User table in real app
+    const engineSegment = mapSegmentToEngine(dbUserSegment);
+    
+    const context: PricingContext = {
+      teeOff: teeOffDate,
+      bookingTime: new Date(),
+      basePriceInput: teeTime.base_price,
+      weather: engineWeather,
+      segment: engineSegment,
+    };
+
+    const serverPricing = calculateDynamicPrice(context);
+
+    // Tolerance check
+    if (serverPricing.finalPrice !== clientProvidedPrice) {
+      console.warn(`Price Mismatch! Client: ${clientProvidedPrice}, Server: ${serverPricing.finalPrice}`);
+      // For V2 transition, strict check might be annoying if client/server clock drifts slightly affecting LMD.
+      // But adhering to strict security for now.
+      return NextResponse.json(
+        { error: 'Price validation failed. Please refresh and try again.', serverPrice: serverPricing.finalPrice },
+        { status: 400 }
+      );
+    }
+
+    // 4. Create Reservation
+    const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
       .insert({
         user_id: userId,
         tee_time_id: teeTimeId,
-        final_price: finalPrice,
-        discount_breakdown: discountBreakdown,
+        final_price: serverPricing.finalPrice,
+        discount_breakdown: serverPricing.appliedRules, // Save V2 breakdown
         payment_status: 'PENDING',
+        agreed_penalty: true,
       })
       .select()
       .single();
 
     if (reservationError) {
-      console.error('Reservation insert error:', reservationError);
-      return NextResponse.json(
-        { error: 'Failed to create reservation', details: reservationError.message },
-        { status: 500 }
-      );
+      throw reservationError;
     }
 
-    // Update tee time status to BOOKED
-    const { error: updateError } = await (supabase as any)
+    // 5. Update Tee Time Status
+    const { error: updateError } = await supabase
       .from('tee_times')
       .update({
         status: 'BOOKED',
@@ -73,13 +122,9 @@ export async function POST(request: NextRequest) {
       .eq('id', teeTimeId);
 
     if (updateError) {
-      console.error('Tee time update error:', updateError);
-      // Rollback reservation if tee time update fails
-      await (supabase as any).from('reservations').delete().eq('id', reservation.id);
-      return NextResponse.json(
-        { error: 'Failed to update tee time status', details: updateError.message },
-        { status: 500 }
-      );
+      // Rollback
+      await supabase.from('reservations').delete().eq('id', reservation.id);
+      throw updateError;
     }
 
     return NextResponse.json(
@@ -87,70 +132,16 @@ export async function POST(request: NextRequest) {
         success: true,
         reservation: {
           id: reservation.id,
-          teeTimeId: reservation.tee_time_id,
           finalPrice: reservation.final_price,
-          paymentStatus: reservation.payment_status,
-          createdAt: reservation.created_at,
         },
       },
       { status: 201 }
     );
+
   } catch (error) {
-    console.error('Reservation API error:', error);
+    console.error('Reservation Error:', error);
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
-}
-
-// GET endpoint to retrieve user's reservations
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Missing userId parameter' },
-        { status: 400 }
-      );
-    }
-
-    const { data: reservations, error } = await supabase
-      .from('reservations')
-      .select(`
-        id,
-        final_price,
-        discount_breakdown,
-        payment_status,
-        created_at,
-        tee_times (
-          id,
-          tee_off_time,
-          base_price,
-          status,
-          golf_clubs (
-            name,
-            location_name
-          )
-        )
-      `)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return NextResponse.json(
-        { error: 'Failed to fetch reservations', details: error.message },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({ reservations }, { status: 200 });
-  } catch (error) {
-    console.error('Get reservations error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Internal server error' },
       { status: 500 }
     );
   }

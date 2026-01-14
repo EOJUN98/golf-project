@@ -1,151 +1,103 @@
-// ==================================================================
-// Supabase Query Functions for TUGOL
-// ==================================================================
-
 import { supabase } from '@/lib/supabase';
+import { calculateDynamicPrice, PricingContext, WeatherData } from '@/utils/pricingEngine';
 
 export interface TeeTimeWithPricing {
   id: number;
   tee_off: string;
-  base_price: number;
-  status: string;
-  time: string;
-  teeOffTime: Date;
   basePrice: number;
   finalPrice: number;
+  price: number;
+  currency: string;
+  status: 'OPEN' | 'BOOKED' | 'BLOCKED';
   reasons: string[];
-  weather: {
-    sky?: string;
-    temperature?: number;
-    rainProb: number;
+  weather: WeatherData;
+  // Added for compatibility with UI components that might expect these
+  teeOffTime: Date; 
+  discountResult?: any; // Kept as optional to reduce breakage
+}
+
+function generateMockWeather(date: Date, hour: number): WeatherData {
+  const seed = date.getDate() + hour; 
+  const rainProb = (seed * 7) % 100;
+  
+  let sky = '맑음';
+  if (rainProb > 30) sky = '구름';
+  if (rainProb > 60) sky = '비';
+
+  return {
+    sky,
+    temperature: 20 + (seed % 10) - 5,
+    rainProb,
+    windSpeed: (seed % 10),
   };
 }
 
-/**
- * Fetch tee times for a specific date
- * @param date - The date to fetch tee times for
- * @returns Array of tee times with pricing data
- */
 export async function getTeeTimesByDate(date: Date): Promise<TeeTimeWithPricing[]> {
-  try {
-    // Calculate start and end of day in ISO format
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
+  // ✅ 전략: DB 조회는 "날짜 그대로 00:00~23:59 UTC"로 하고,
+  //         클라이언트로 반환할 때 -9시간 보정 (브라우저가 +9시간 할 것을 대비)
 
-    console.log('Fetching tee times for:', {
-      startOfDay: startOfDay.toISOString(),
-      endOfDay: endOfDay.toISOString()
-    });
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
 
-    // Query Supabase
-    const { data, error } = await supabase
-      .from('tee_times')
-      .select('*')
-      .eq('status', 'OPEN')
-      .gte('tee_off', startOfDay.toISOString())
-      .lte('tee_off', endOfDay.toISOString())
-      .order('tee_off', { ascending: true });
+  // 해당 날짜의 00:00:00 UTC 타임스탬프 (시차 변환 없음)
+  const utcMidnight = Date.UTC(year, month, day, 0, 0, 0, 0);
 
-    if (error) {
-      console.error('Supabase query error:', error);
-      throw error;
-    }
+  // 해당 날짜의 23:59:59.999 UTC
+  const utcDayEnd = utcMidnight + (24 * 60 * 60 * 1000) - 1;
 
-    if (!data || data.length === 0) {
-      console.log('No tee times found for this date');
-      return [];
-    }
+  const startISO = new Date(utcMidnight).toISOString();
+  const endISO = new Date(utcDayEnd).toISOString();
 
-    console.log(`Found ${data.length} tee times`);
+  const { data: teeTimes, error } = await supabase
+    .from('tee_times')
+    .select('*')
+    .gte('tee_off', startISO)
+    .lte('tee_off', endISO)
+    .order('tee_off', { ascending: true });
 
-    // Transform data to match the expected format
-    const transformedData: TeeTimeWithPricing[] = data.map((teeTime: any) => {
-      const teeOffDate = new Date(teeTime.tee_off);
-      const hours = teeOffDate.getHours().toString().padStart(2, '0');
-      const minutes = teeOffDate.getMinutes().toString().padStart(2, '0');
-      const timeString = `${hours}:${minutes}`;
-
-      // Calculate discount based on weather and time
-      let finalPrice = teeTime.base_price;
-      const reasons: string[] = [];
-      
-      // Mock weather discount (you can integrate real weather API here)
-      const mockRainProb = Math.random() * 100;
-      if (mockRainProb > 50) {
-        finalPrice *= 0.8;
-        reasons.push('우천할인 20%');
-      }
-
-      // Time-based discount (closer to tee time)
-      const now = new Date();
-      const hoursUntilTeeOff = (teeOffDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-      if (hoursUntilTeeOff < 24) {
-        finalPrice *= 0.9;
-        reasons.push('당일특가 10%');
-      }
-
-      return {
-        id: teeTime.id,
-        tee_off: teeTime.tee_off,
-        base_price: teeTime.base_price,
-        status: teeTime.status,
-        time: timeString,
-        teeOffTime: teeOffDate,
-        basePrice: teeTime.base_price,
-        finalPrice: Math.round(finalPrice),
-        reasons,
-        weather: {
-          sky: mockRainProb > 70 ? '비' : mockRainProb > 40 ? '흐림' : '맑음',
-          temperature: Math.round(20 + Math.random() * 10),
-          rainProb: Math.round(mockRainProb),
-        },
-      };
-    });
-
-    return transformedData;
-  } catch (error) {
+  if (error) {
     console.error('Error fetching tee times:', error);
-    throw error;
-  }
-}
-
-/**
- * Get available dates (dates that have tee times)
- * @returns Array of dates with available tee times
- */
-export async function getAvailableDates(): Promise<Date[]> {
-  try {
-    const now = new Date();
-    const twoWeeksLater = new Date();
-    twoWeeksLater.setDate(now.getDate() + 14);
-
-    const { data, error } = await supabase
-      .from('tee_times')
-      .select('tee_off')
-      .eq('status', 'OPEN')
-      .gte('tee_off', now.toISOString())
-      .lte('tee_off', twoWeeksLater.toISOString())
-      .order('tee_off', { ascending: true });
-
-    if (error) {
-      console.error('Error fetching available dates:', error);
-      return [];
-    }
-
-    // Extract unique dates
-    const uniqueDates = new Set<string>();
-    data?.forEach((item: any) => {
-      const date = new Date(item.tee_off);
-      const dateString = date.toDateString();
-      uniqueDates.add(dateString);
-    });
-
-    return Array.from(uniqueDates).map(dateString => new Date(dateString));
-  } catch (error) {
-    console.error('Error in getAvailableDates:', error);
     return [];
   }
+
+  const bookingTime = new Date();
+
+  return teeTimes.map((item: any) => {
+    // 1. 원본 시간 (DB에 있는 시간 그대로, Pricing Engine용)
+    const originalDate = new Date(item.tee_off);
+
+    // 2. 화면 표시용 시간 (-9시간 보정)
+    // 브라우저가 +9시간 할 것을 대비해 미리 -9시간을 함
+    const displayDate = new Date(originalDate.getTime() - (9 * 60 * 60 * 1000));
+
+    // 3. Mock Weather 생성 (원본 시간 기준)
+    const mockWeather = generateMockWeather(originalDate, originalDate.getHours());
+
+    // 4. Pricing Engine 계산 (원본 시간 기준)
+    const ctx: PricingContext = {
+      teeOff: originalDate, // 중요: 원본 시간을 넣어야 함
+      bookingTime: bookingTime,
+      basePriceInput: item.base_price,
+      weather: mockWeather,
+      segment: 'Base',
+    };
+
+    const result = calculateDynamicPrice(ctx);
+
+    return {
+      id: item.id,
+      tee_off: displayDate.toISOString(), // 중요: 화면에는 보정된 시간을 전달
+      basePrice: result.basePrice,
+      finalPrice: result.finalPrice,
+      price: result.finalPrice,
+      currency: item.currency || 'KRW',
+      status: item.status,
+      reasons: result.reasons,
+      weather: mockWeather,
+      // Backward compatibility fields
+      teeOffTime: displayDate, // 화면 표시용 Date 객체도 보정된 시간 사용
+      discountResult: result,
+    };
+  });
 }

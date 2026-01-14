@@ -1,0 +1,219 @@
+# TUGOL — Phase 10 Runtime Knowledge Snapshot (v1.0)
+
+**Project:** TUGOL (Dynamic Pricing Golf Booking Platform)  
+**Version:** v1.0 (MVP + Payment + Deploy Complete)  
+**Phase 기준:** Phase 10 (MVP 개발 완료 & Vercel 배포 성공 시점)  
+**Environment:** Production (Vercel + Supabase)
+
+---
+
+## [0] System Role & Usage
+
+너는 지금부터 골프 티타임 예약 플랫폼 **TUGOL**의  
+**메인 아키텍트 + PM + 기술 문서 관리자 + RAG 컨텍스트 스토리지**다.
+
+이 문서는:
+
+- 새 LLM 세션에서 프로젝트 상황을 빠르게 복원
+- 기획 10종 보고서 + 실제 코드 + 배포 상태 연결
+- "이전 상황 기반으로 다음 개발"을 위한 근거 제공
+
+---
+
+## [1] 프로젝트 스냅샷 (Phase 10 기준)
+
+**프로젝트명:** TUGOL  
+**핵심 가치:** Dynamic Pricing 기반 골프 예약 + Panic Mode  
+**현재 상태:**
+
+- Phase 1~7: 설계/DB/UX/기획 기반 확립  
+- Phase 8: Toss 결제 + DB + 예약 반영까지 검증 완료  
+- Phase 9: Date Picker & Time Slice UI 완성  
+- Phase 10: Vercel 배포 완료 + MVP 작동 확인  
+
+---
+
+## [2] Tech Stack & Deployment
+
+### 스택
+
+- **Frontend:** Next.js 15/16(App Router), TS, Tailwind
+- **Backend:** Next.js API Routes
+- **DB:** Supabase(PostgreSQL)
+- **Payment:** Toss Payments — Payment Widget
+- **Deploy:** Vercel
+
+### Deployment 이슈 해결
+
+문제 → GitHub Root mismatch로 빌드/라우팅 실패  
+해결 → Vercel Root Directory 초기화로 최상위 `package.json` 인식
+
+---
+
+## [3] 디렉토리 구조 (요약)
+
+```
+app/
+  page.tsx
+  layout.tsx
+  api/payments/confirm
+  payment/success
+  payment/fail
+  admin/
+components/
+  BookingModal.tsx
+  DateSelector.tsx
+utils/
+  supabase/queries.ts
+types/
+  database.ts
+lib/
+  supabase.ts
+```
+
+---
+
+## [4] 구현된 기능 (MVP 기준)
+
+### (1) 날짜 선택 (14일)
+
+- Today 강조
+- Horizontal Chip UI
+- onDateChange → Supabase 재조회
+
+### (2) 3부제 타임 필터
+
+| 구분 | 시간 | 아이콘 |
+|---|---|---|
+| 1부 | 05~10:59 | 🌅 |
+| 2부 | 11~16:59 | 🌞 |
+| 3부 | 17~     | 🌙 |
+
+`useMemo`로 tee_times 필터링
+
+### (3) Dynamic Pricing UI
+
+노출 구조:
+
+```
+~~정가~~ (작고 회색)
+할인가(크게 강조)
+reasons[]
+```
+
+### (4) Panic Deal(Pseudo)
+
+랜덤 팝업  
+LBS/임박 모드는 향후 확장
+
+### (5) 예약 & Toss 결제 플로우
+
+`BookingModal.tsx`:
+
+- Toss Payment Widget
+- Strict 모드 double-init → `useRef` Singleton 해결
+
+`/payment/success`:
+
+- `useSearchParams()` → CSR 필요 → `<Suspense>` 사용
+
+`/api/payments/confirm`:
+
+- Toss Server 승인
+- 검증 성공 시:
+  - `reservations` INSERT
+  - `tee_times.status = 'BOOKED'`
+- 실패 시 rollback
+
+---
+
+## [5] Supabase Schema (최종)
+
+### 테이블: `tee_times`
+
+| Column | Type | 설명 |
+|---|---|---|
+| id | int8 | PK |
+| tee_off | timestamptz | UTC |
+| base_price | int4 | 정가 |
+| price | int4 | 최종가 |
+| status | `'OPEN' \| 'BOOKED' \| 'BLOCKED'` | ENUM |
+| currency | text | KRW |
+| reserved_at | timestamptz | 예약 시각 |
+| reserved_by | int8 | FK(user) |
+
+### 테이블: `reservations`
+
+| Column | Type | 설명 |
+|---|---|---|
+| id | int8 | PK |
+| tee_time_id | int8 | FK |
+| user_id | int8 | FK |
+| status | text | `'CONFIRMED' \| 'CANCELLED'` |
+| amount | int4 | 결제 금액 |
+| payment_key | text | Toss PaymentKey |
+| receipt_url | text | Toss 전표 |
+| payment_status | text | `'PAID' \| 'FAILED'` |
+
+개발 단계 → RLS 비활성화  
+PROD 전환 → Policy 필요
+
+---
+
+## [6] Troubleshooting (Phase 8~10)
+
+### Strict Mode + Widget
+
+- Dev double-init 문제
+- `useRef` Singleton 패턴으로 해결
+
+### ENUM 대소문자
+
+- `'open' vs 'OPEN'` mismatch → DB 스키마 기준으로 통일
+
+### RLS
+
+- 개발 단계 DISABLE → PROD에서 설계 예정
+
+### Schema 변경 캐시
+
+- Supabase 스키마 수정 후 Dev 서버 재시작 필요
+
+### Suspense + SearchParams
+
+- CSR 보장 위해 `<Suspense>` 사용
+
+---
+
+## [7] Phase History 요약
+
+- Phase 8 → Toss 결제 + DB 반영 + 예약 확정
+- Phase 9 → DateSelector + 3부제 필터
+- Phase 10 → Vercel 배포 + MVP 완성
+
+---
+
+## [8] Post-MVP 확장 지점
+
+- 기상청 POP/RN1 기반 Pricing
+- LBS 기반 Panic
+- CRM(Future/Prestige/Cherry)
+- Admin Override + 티타임 관리
+- Prod 레벨 RLS
+- Yield/Conversion 분석
+
+---
+
+## [9] RAG Retrieval Guide
+
+유용한 질문 예시:
+
+- "결제 플로우 단계별 설명"
+- "현재 Admin의 미구현 기능 정리"
+- "Dynamic Pricing 중 구현된 부분 vs 기획된 부분"
+- "Supabase 타입 기반 TS 인터페이스 재생성"
+- "Post-MVP 우선순위 제안"
+
+---
+
+# END OF FILE
