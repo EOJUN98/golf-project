@@ -6,14 +6,23 @@ import { Gift, Timer, Calendar as CalendarIcon, Sunrise, Sun, Moon, Loader2 } fr
 import DateSelector from '@/components/DateSelector';
 import BookingModal from '@/components/BookingModal';
 import { TeeTimeWithPricing } from '@/utils/supabase/queries';
-import { UserSegment } from '@/types/database';
+import { Database } from '@/types/database';
+
+type UserSegment = Database['public']['Tables']['users']['Row']['segment'];
 
 interface TeeTimeListProps {
   initialTeeTimes: TeeTimeWithPricing[];
   initialDate: Date;
+  initialDateStr?: string; // SDD-02: YYYY-MM-DD format for DateSelector
+  maxForwardDays?: number; // SDD-02: Configurable max forward days
 }
 
-export default function TeeTimeList({ initialTeeTimes, initialDate }: TeeTimeListProps) {
+export default function TeeTimeList({
+  initialTeeTimes,
+  initialDate,
+  initialDateStr,
+  maxForwardDays = 14
+}: TeeTimeListProps) {
   // 1. Hydration Mismatch 방지를 위한 마운트 상태 추가
   const [mounted, setMounted] = useState(false);
 
@@ -99,6 +108,7 @@ export default function TeeTimeList({ initialTeeTimes, initialDate }: TeeTimeLis
 
   // Mock User Info
   const userInfo = {
+      userId: '00000000-0000-0000-0000-000000000000', // Mock UUID
       segment: 'PRESTIGE' as UserSegment,
       isNearby: true
   };
@@ -156,9 +166,10 @@ export default function TeeTimeList({ initialTeeTimes, initialDate }: TeeTimeLis
 
       {/* Date & Part Selector */}
       <div className="sticky top-0 bg-gray-50 z-10 pt-2">
-           <DateSelector 
-            selectedDate={selectedDate} 
-            onDateChange={handleDateChange} 
+           <DateSelector
+            selectedDate={selectedDate}
+            onDateChange={handleDateChange}
+            maxForwardDays={maxForwardDays}
           />
         
           <div className="px-4 py-2 bg-gray-50">
@@ -264,7 +275,7 @@ export default function TeeTimeList({ initialTeeTimes, initialDate }: TeeTimeLis
           isOpen={isBookingModalOpen}
           onClose={() => setIsBookingModalOpen(false)}
           teeTime={selectedTeeTime}
-          userId={1} 
+          userId={userInfo.userId} 
           userSegment={userInfo.segment}
           onSuccess={handleBookingSuccess}
         />

@@ -1,36 +1,29 @@
-# Reward Spec v0.9
+# TUGOL Reward Spec (v0.9)
 
-> **Scope:** Definition of the Reward Function for RL/Bandit optimization.
+## 1. Purpose
+Defines the Objective Function ($R$) for optimization.
 
-## 1. Primary Reward (R)
-The objective function to maximize.
+## 2. Reward Function
+$$ R = w_1 \cdot R_{Rev} + w_2 \cdot R_{Occ} + w_3 \cdot R_{Vel} + w_4 \cdot R_{Acc} - P_{Cancel} $$
 
-$$ R = w_1 \cdot R_{rev} + w_2 \cdot R_{occ} + w_3 \cdot R_{host} $$
+| Component | Description | Weight (Proxy) |
+| :--- | :--- | :--- |
+| **$R_{Rev}$** | Revenue (Final Price) | High (Primary) |
+| **$R_{Occ}$** | Occupancy (Binary: Booked=1) | Medium |
+| **$R_{Vel}$** | Booking Velocity (Speed) | Low |
+| **$R_{Acc}$** | Host Acceptance (RECO mode) | High (Trust) |
+| **$P_{Cancel}$**| Cancellation Penalty | Negative |
 
-### Components:
-1.  **Revenue ($R_{rev}$):**
-    -   `Actual Booking Price` (if booked).
-    -   `0` (if not booked).
-2.  **Occupancy ($R_{occ}$):**
-    -   Small bonus for filling a slot (Inventory Clearance).
-    -   Critical for `LAST_MINUTE` segment.
-3.  **Host Acceptance ($R_{host}$):**
-    -   **RECO Mode Only.**
-    -   `+1` if Host accepts recommendation.
-    -   `-1` if Host modifies deviation > 5%.
+## 3. Mode-Specific Weights
 
-## 2. Shaping & Penalties
+### RECO Mode (Trust Building)
+- Focus on **Acceptance**.
+- $R \approx 0.7 \cdot R_{Acc} + 0.3 \cdot R_{Rev}$
 
-### A. Cancellation Penalty
--   If a booking is cancelled:
-    -   Subtract original reward.
-    -   Apply `Cancellation Fee` as partial reward (if applicable).
+### AUTO Mode (Revenue Gen)
+- Focus on **Revenue & Occupancy**.
+- $R \approx 0.6 \cdot R_{Rev} + 0.3 \cdot R_{Occ} + 0.1 \cdot R_{Vel}$
 
-### B. Volatility Penalty
--   Penalize rapid price fluctuations to ensure user trust.
--   $R_{final} = R - \lambda \cdot |P_t - P_{t-1}|$
-
-## 3. Reward Attribution
--   **Immediate:** Pricing Decision -> Immediate Booking.
--   **Delayed:** Pricing Decision -> Booking 3 days later (Attribution Window needed).
--   **V0.9 Strategy:** Use **Immediate Reward** (Session-based) for simplicity.
+## 4. Constraints (Penalty)
+- **Governance Violation:** Reward = -Infinity.
+- **High Volatility:** Penalty for changing price too frequently.

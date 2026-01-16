@@ -1,25 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { paymentKey, orderId, amount, metadata } = body;
+    const searchParams = request.nextUrl.searchParams;
+    const paymentKey = searchParams.get('paymentKey');
+    const orderId = searchParams.get('orderId');
+    const amount = searchParams.get('amount');
+    const teeTimeId = searchParams.get('tee_time_id');
+    const userId = searchParams.get('user_id');
 
     // Validation
-    if (!paymentKey || !orderId || !amount || !metadata) {
-      return NextResponse.json(
-        { error: 'Missing required fields: paymentKey, orderId, amount, metadata' },
-        { status: 400 }
+    if (!paymentKey || !orderId || !amount) {
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=INVALID_REQUEST&message=Missing payment parameters`, request.url)
       );
     }
 
-    const { userId, teeTimeId, finalPrice, discountBreakdown } = metadata;
-
-    if (!userId || !teeTimeId || !finalPrice) {
-      return NextResponse.json(
-        { error: 'Invalid metadata: userId, teeTimeId, finalPrice required' },
-        { status: 400 }
+    if (!teeTimeId || !userId) {
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=INVALID_REQUEST&message=Missing booking parameters`, request.url)
       );
     }
 
@@ -27,9 +27,8 @@ export async function POST(request: NextRequest) {
     const tossSecretKey = process.env.TOSS_SECRET_KEY;
     if (!tossSecretKey) {
       console.error('TOSS_SECRET_KEY not found in environment');
-      return NextResponse.json(
-        { error: 'Payment system configuration error' },
-        { status: 500 }
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=CONFIG_ERROR&message=Payment system error`, request.url)
       );
     }
 
@@ -42,7 +41,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         paymentKey,
         orderId,
-        amount,
+        amount: Number(amount),
       }),
     });
 
@@ -50,49 +49,34 @@ export async function POST(request: NextRequest) {
 
     if (!tossResponse.ok) {
       console.error('Toss payment confirmation failed:', tossResult);
-      return NextResponse.json(
-        {
-          error: 'Payment confirmation failed',
-          details: tossResult.message || 'Unknown error from Toss',
-          code: tossResult.code
-        },
-        { status: 400 }
+      return NextResponse.redirect(
+        new URL(
+          `/payment/fail?code=${tossResult.code || 'PAYMENT_FAILED'}&message=${encodeURIComponent(tossResult.message || '결제 승인에 실패했습니다')}`,
+          request.url
+        )
       );
     }
 
     // Step 2: Check if tee time is still available
-    const { data: teeTime, error: teeTimeError } = await supabase
+    const { data: teeTimeData, error: teeTimeError } = await supabase
       .from('tee_times')
-      .select('id, status')
-      .eq('id', teeTimeId)
+      .select('id, status, base_price')
+      .eq('id', Number(teeTimeId))
       .single();
 
-    const teeTimeData = teeTime as { id: number; status: string } | null;
+    const teeTime = teeTimeData as { id: number; status: string; base_price: number } | null;
 
-    if (teeTimeError || !teeTimeData) {
+    if (teeTimeError || !teeTime) {
       console.error('Tee time not found:', teeTimeError);
-      // Payment succeeded but booking failed - should trigger refund in production
-      return NextResponse.json(
-        {
-          error: 'Tee time not found',
-          warning: 'Payment succeeded but booking failed. Contact support for refund.',
-          paymentKey
-        },
-        { status: 404 }
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=TEE_TIME_NOT_FOUND&message=티타임을 찾을 수 없습니다`, request.url)
       );
     }
 
-    if (teeTimeData.status !== 'OPEN') {
-      console.error('Tee time no longer available:', teeTimeData.status);
-      // Payment succeeded but tee time taken - should trigger refund
-      return NextResponse.json(
-        {
-          error: 'Tee time is no longer available',
-          warning: 'Payment succeeded but tee time was already booked. Contact support for refund.',
-          paymentKey,
-          status: teeTimeData.status
-        },
-        { status: 409 }
+    if (teeTime.status !== 'OPEN') {
+      console.error('Tee time no longer available:', teeTime.status);
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=TEE_TIME_UNAVAILABLE&message=이미 예약된 티타임입니다`, request.url)
       );
     }
 
@@ -101,27 +85,20 @@ export async function POST(request: NextRequest) {
       .from('reservations')
       .insert({
         user_id: userId,
-        tee_time_id: teeTimeId,
-        final_price: finalPrice,
-        discount_breakdown: discountBreakdown || null,
-        payment_status: 'PAID',
+        tee_time_id: Number(teeTimeId),
+        base_price: teeTime.base_price,
+        final_price: Number(amount),
+        discount_breakdown: null,
         payment_key: paymentKey,
-        order_id: orderId,
+        payment_status: 'PAID',
       })
       .select()
       .single();
 
     if (reservationError) {
       console.error('Reservation insert error:', reservationError);
-      // Payment succeeded but DB insert failed - critical error
-      return NextResponse.json(
-        {
-          error: 'Failed to create reservation',
-          warning: 'Payment succeeded but booking failed. Contact support immediately.',
-          paymentKey,
-          details: reservationError.message
-        },
-        { status: 500 }
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=DB_ERROR&message=예약 생성에 실패했습니다`, request.url)
       );
     }
 
@@ -133,54 +110,32 @@ export async function POST(request: NextRequest) {
         reserved_by: userId,
         reserved_at: new Date().toISOString(),
       })
-      .eq('id', teeTimeId);
+      .eq('id', Number(teeTimeId));
 
     if (updateError) {
       console.error('Tee time update error:', updateError);
       // Rollback: Delete the reservation
       await (supabase as any).from('reservations').delete().eq('id', reservation.id);
 
-      return NextResponse.json(
-        {
-          error: 'Failed to update tee time status',
-          warning: 'Payment succeeded but booking failed. Contact support for refund.',
-          paymentKey,
-          details: updateError.message
-        },
-        { status: 500 }
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=DB_ERROR&message=티타임 상태 업데이트 실패`, request.url)
       );
     }
 
-    // Success!
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Payment confirmed and booking created',
-        reservation: {
-          id: reservation.id,
-          teeTimeId: reservation.tee_time_id,
-          finalPrice: reservation.final_price,
-          paymentStatus: reservation.payment_status,
-          orderId: reservation.order_id,
-        },
-        payment: {
-          paymentKey: tossResult.paymentKey,
-          orderId: tossResult.orderId,
-          method: tossResult.method,
-          totalAmount: tossResult.totalAmount,
-          approvedAt: tossResult.approvedAt,
-        },
-      },
-      { status: 201 }
-    );
+    // Success! Redirect to success page with payment details
+    const successUrl = new URL('/payment/success', request.url);
+    successUrl.searchParams.set('orderId', orderId);
+    successUrl.searchParams.set('amount', amount);
+    successUrl.searchParams.set('paymentKey', paymentKey);
+
+    return NextResponse.redirect(successUrl);
   } catch (error) {
     console.error('Payment confirmation error:', error);
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
+    return NextResponse.redirect(
+      new URL(
+        `/payment/fail?code=SERVER_ERROR&message=${encodeURIComponent(error instanceof Error ? error.message : '서버 오류가 발생했습니다')}`,
+        request.url
+      )
     );
   }
 }

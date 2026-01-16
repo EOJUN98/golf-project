@@ -1,33 +1,22 @@
-# Versioning Spec v0.9
+# TUGOL Versioning Spec (v0.9)
 
-> **Scope:** Roadmap and Feature Flags for Engine Evolution.
+## 1. Version Roadmap
 
-## 1. Version History
+| Version | Phase | Goal | Key Features |
+| :--- | :--- | :--- | :--- |
+| **v0.9** | **Validation** | Data & Trust | RECO Mode, Basic Rules, Data Logging, Dashboard. |
+| **v1.0** | **Pilot** | Automation | AUTO Mode (Opt-in), Contextual Bandit, Chain Config. |
+| **v2.0** | **SaaS/Scale** | Expansion | Multi-Chain Transfer, Global Policy, API Gateway. |
+| **v3.0** | **RL Core** | Optimization | Full Offline RL, Simulator, LTV Optimization. |
+| **v4.0** | **Market Infra** | Coordination | Supply/Demand Balancing, Network Effects. |
 
-| Version | Codename | Focus | Key Features | Status |
-| :--- | :--- | :--- | :--- | :--- |
-| **v0.9** | **Validation** | Data & Trust | `RECO` Mode, Data Pipeline, Basic Rule Engine, Host Dashboard | **Target** |
-| **v1.0** | **Pilot** | Automation | `AUTO` Mode (Opt-in), Contextual Bandit, Chain Config | Planned |
-| **v2.0** | **Scale** | Intelligence | Full RL, Multi-Chain Transfer Learning, SaaS API | Future |
+## 2. Current Status (v0.9)
+- **Focus:** Building the Data Pipeline and gaining Host Trust via RECO.
+- **Limitations:** No active Bandit exploration. AUTO mode is disabled or simulated only.
+- **Target:** 2~4 Validation Sites.
 
-## 2. Migration Strategy (v0.9 → v1.0)
-
-### Feature Flags
-Use flags to enable v1.0 features in v0.9 codebase for specific Pilot courses.
-
-```json
-{
-  "enable_bandit_logic": false, // v1.0 feature
-  "enable_auto_pricing": false, // v1.0 feature
-  "enable_advanced_logging": true // v0.9 feature
-}
-```
-
-### Data Compatibility
--   v0.9 Logs must be forward-compatible with v1.0 RL Training.
--   Ensure `State` vector captures all necessary features even if not used by v0.9 logic.
-
-## 3. Release Cycle
--   **Sprint:** 2 weeks.
--   **Validation Phase:** 8-12 weeks (v0.9).
--   **Pilot Phase:** 3-6 months (v1.0).
+## 3. Migration Strategy
+- **v0.9 → v1.0:**
+  - Enable `feature_flags.auto_pricing`.
+  - Deploy `Bandit Model` trained on v0.9 logs.
+  - Expand Config to support Chain-level policies.

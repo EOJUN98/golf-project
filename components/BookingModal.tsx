@@ -9,8 +9,8 @@ import { TeeTimeWithPricing } from '@/utils/supabase/queries';
 interface BookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  teeTime: TeeTimeWithPricing; // ✅ 타입 통일
-  userId?: number;
+  teeTime: TeeTimeWithPricing;
+  userId?: string; // UUID string
   userSegment?: string;
   onSuccess?: () => void;
 }
@@ -19,7 +19,7 @@ export default function BookingModal({
   isOpen,
   onClose,
   teeTime,
-  userId = 1,
+  userId, // No default value
   userSegment = 'SMART',
   onSuccess,
 }: BookingModalProps) {

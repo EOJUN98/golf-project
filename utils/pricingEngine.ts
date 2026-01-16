@@ -1,169 +1,235 @@
-export type UserSegment = 'VIP' | 'Smart' | 'Base' | 'Cherry';
+import { Database, Json } from '../types/database';
 
-export interface WeatherData {
-  sky: string;        // '맑음', '구름', '비', '눈'
-  temperature: number; // 섭씨
-  rainProb: number;    // %
-  windSpeed: number;   // m/s
-}
+type TeeTime = Database['public']['Tables']['tee_times']['Row'];
+type User = Database['public']['Tables']['users']['Row'];
+type Weather = Database['public']['Tables']['weather_cache']['Row'];
+
+export { type Json }; // Export Json to satisfy linter if imported but not used locally
 
 export interface PricingContext {
-  teeOff: Date;           // 티오프 시간
-  bookingTime: Date;      // 예약 시점 (현재 시간)
-  basePriceInput?: number; // DB에 설정된 기본가가 있다면 사용
-  weather: WeatherData;
-  segment?: UserSegment;
+  teeTime: TeeTime;
+  user?: User;
+  weather?: Weather;
+  userDistanceKm?: number; // LBS (Optional)
+  now?: Date; // For testing time travel
 }
 
 export interface PricingResult {
   finalPrice: number;
   basePrice: number;
-  reasons: string[];
-  appliedRules: {
-    layer: string;
-    factor: number;
-    amount: number;
+  discountRate: number;
+  isBlocked: boolean;
+  blockReason?: string;
+  factors: {
+    code: string;
     description: string;
+    amount: number;
+    rate: number;
   }[];
+  stepStatus?: {
+    currentStep: number; // 0, 1, 2, 3
+    nextStepAt?: string;
+  };
+  panicMode?: {
+    active: boolean;
+    minutesLeft: number;
+    reason: string;
+  };
 }
 
-// === Constants & Policies ===
-const POLICY = {
-  // L1: Base Price (비수기 기준)
-  BASE_WEEKDAY: 120000,
-  BASE_WEEKEND: 160000,
-  
-  // 성수기 (3~6월, 9~11월)
-  PEAK_MONTHS: [2, 3, 4, 5, 8, 9, 10], 
-  PEAK_MULTIPLIER: 1.25,
+// Deterministic Random (Seeded Linear Congruential Generator)
+class SeededRandom {
+  private seed: number;
 
-  // Premium Slot (토요일 2부: 11시~14시)
-  PREMIUM_HOUR_START: 11,
-  PREMIUM_HOUR_END: 14,
-  PREMIUM_SURCHARGE: 20000,
-
-  // L2: Time (임박 할인)
-  LMD_THRESHOLD_HOURS: 24,
-  LMD_DISCOUNT_WEEKDAY: 0.85, // -15%
-  LMD_DISCOUNT_WEEKEND: 0.95, // -5%
-
-  // L3: Weather
-  WEATHER_RAIN_PROB_THRESHOLD: 30, // %
-  WEATHER_WIND_THRESHOLD: 8,       // m/s
-  WEATHER_TEMP_HIGH: 33,
-  WEATHER_TEMP_LOW: 0,
-  WEATHER_DISCOUNT_RATE: 0.05,     // 5% 할인
-
-  // L4: Segment
-  SEGMENT_VIP_DISCOUNT: 5000,
-  SEGMENT_CHERRY_PANIC_BLOCK: true,
-
-  // L5: Floor
-  FLOOR_PRICE: 50000,
-};
-
-/**
- * 다이내믹 프라이싱 계산 엔진
- */
-export function calculateDynamicPrice(ctx: PricingContext): PricingResult {
-  const { teeOff, bookingTime, weather, segment = 'Base' } = ctx;
-  const reasons: string[] = [];
-  const appliedRules: PricingResult['appliedRules'] = [];
-
-  const isWeekend = (date: Date) => {
-    const day = date.getDay();
-    return day === 0 || day === 6;
-  };
-
-  const isPeakSeason = (date: Date) => POLICY.PEAK_MONTHS.includes(date.getMonth());
-
-  // --- L1: Base Price ---
-  let basePrice = isWeekend(teeOff) ? POLICY.BASE_WEEKEND : POLICY.BASE_WEEKDAY;
-  
-  if (isPeakSeason(teeOff)) {
-    const surcharge = basePrice * (POLICY.PEAK_MULTIPLIER - 1);
-    basePrice += surcharge;
+  constructor(seed: number) {
+    this.seed = seed;
   }
 
-  // Premium Slot
-  if (teeOff.getDay() === 6) {
-    const hour = teeOff.getHours();
-    if (hour >= POLICY.PREMIUM_HOUR_START && hour < POLICY.PREMIUM_HOUR_END) {
-      basePrice += POLICY.PREMIUM_SURCHARGE;
-    }
+  // Returns float between 0 and 1
+  next(): number {
+    this.seed = (this.seed * 9301 + 49297) % 233280;
+    return this.seed / 233280;
   }
 
+  // Returns integer between min and max (inclusive)
+  range(min: number, max: number): number {
+    return min + Math.floor(this.next() * (max - min + 1));
+  }
+}
+
+export function calculatePricing(ctx: PricingContext): PricingResult {
+  const { teeTime, user, weather, userDistanceKm } = ctx;
+  const now = ctx.now || new Date();
+  const teeOff = new Date(teeTime.tee_off);
+  const basePrice = teeTime.base_price;
+  
+  const factors: PricingResult['factors'] = [];
   let currentPrice = basePrice;
+  let isBlocked = false;
+  let blockReason: string | undefined;
 
-  // --- L2: Time ---
-  const hoursUntilTeeOff = (teeOff.getTime() - bookingTime.getTime()) / (1000 * 60 * 60);
+  // 1. Weather Blocking (Safety)
+  // Policy: Rainfall >= 10mm -> Block
+  if (weather && weather.rn1 >= 10) {
+    isBlocked = true;
+    blockReason = 'WEATHER_STORM';
+    return {
+      finalPrice: basePrice,
+      basePrice,
+      discountRate: 0,
+      isBlocked,
+      blockReason,
+      factors: []
+    };
+  }
+
+  // --- Step 1: Fixed Amount Discounts (Time/Step-down) ---
   
-  if (hoursUntilTeeOff < POLICY.LMD_THRESHOLD_HOURS && hoursUntilTeeOff > 0) {
-    const discountRate = isWeekend(teeOff) 
-      ? POLICY.LMD_DISCOUNT_WEEKEND 
-      : POLICY.LMD_DISCOUNT_WEEKDAY;
-    
-    if (segment !== 'Cherry' || !POLICY.SEGMENT_CHERRY_PANIC_BLOCK) {
-      const discountAmount = currentPrice * (1 - discountRate);
-      currentPrice = Math.floor(currentPrice * discountRate);
-      reasons.push('⚡️임박티켓');
-      appliedRules.push({
-        layer: 'L2_Time',
-        factor: discountRate,
+  // Policy: Starts 2 hours before tee-off. 3 Steps.
+  // Intervals: 10-30 mins random.
+  // Amount: >= 100k -> 10k/step, < 100k -> 5k/step.
+  
+  const timeUntilTeeOffMins = (teeOff.getTime() - now.getTime()) / (1000 * 60);
+  const rng = new SeededRandom(teeTime.id);
+  
+  const step1Start = 120;
+  const step1Duration = rng.range(10, 30);
+  const step2Start = step1Start - step1Duration; 
+  const step2Duration = rng.range(10, 30);
+  const step3Start = step2Start - step2Duration; 
+
+  const stepAmount = basePrice >= 100000 ? 10000 : 5000;
+  let stepLevel = 0;
+
+  if (timeUntilTeeOffMins <= step1Start) {
+    if (timeUntilTeeOffMins > step2Start) stepLevel = 1;
+    else if (timeUntilTeeOffMins > step3Start) stepLevel = 2;
+    else stepLevel = 3;
+  }
+
+  if (stepLevel > 0) {
+    const totalStepDiscount = stepLevel * stepAmount;
+    currentPrice -= totalStepDiscount; // Apply Fixed Deduction
+    factors.push({
+      code: 'TIME_STEP',
+      description: `Time Deal (Step ${stepLevel})`,
+      amount: -totalStepDiscount,
+      rate: Number((totalStepDiscount / basePrice).toFixed(3))
+    });
+  }
+
+  // --- Step 2: Multiplicative Percentage Discounts ---
+  // Formula: Price = PreviousPrice * (1 - Rate)
+  
+  // A. Weather Discount
+  if (weather) {
+    let weatherRate = 0;
+    let weatherDesc = '';
+
+    if (weather.rn1 >= 1 || weather.pop >= 60) {
+      weatherRate = 0.20;
+      weatherDesc = 'Rain Forecast (20%)';
+    } else if (weather.pop >= 30) {
+      weatherRate = 0.10;
+      weatherDesc = 'Cloudy (10%)';
+    }
+
+    if (weatherRate > 0) {
+      const discountAmount = Math.floor(currentPrice * weatherRate);
+      currentPrice = currentPrice - discountAmount; // Multiplicative application
+      factors.push({
+        code: 'WEATHER',
+        description: weatherDesc,
         amount: -discountAmount,
-        description: '임박 할인 적용'
+        rate: weatherRate
       });
     }
   }
 
-  // --- L3: Weather ---
-  let weatherDiscountApply = false;
-  if (weather.rainProb >= POLICY.WEATHER_RAIN_PROB_THRESHOLD) weatherDiscountApply = true;
-  if (weather.temperature >= POLICY.WEATHER_TEMP_HIGH || weather.temperature <= POLICY.WEATHER_TEMP_LOW) weatherDiscountApply = true;
-  if (weather.windSpeed >= POLICY.WEATHER_WIND_THRESHOLD) weatherDiscountApply = true;
-
-  if (weatherDiscountApply) {
-    const discountAmount = currentPrice * POLICY.WEATHER_DISCOUNT_RATE;
-    currentPrice -= discountAmount;
-    reasons.push('⛅️기상할인');
-    appliedRules.push({
-      layer: 'L3_Weather',
-      factor: 1 - POLICY.WEATHER_DISCOUNT_RATE,
+  // B. User Segment Discount
+  if (user && user.segment === 'PRESTIGE') {
+    const rate = 0.05;
+    const discountAmount = Math.floor(currentPrice * rate);
+    currentPrice = currentPrice - discountAmount;
+    factors.push({
+      code: 'VIP_STATUS',
+      description: 'PRESTIGE Member (5%)',
       amount: -discountAmount,
-      description: '기상 악조건 위로금'
+      rate
     });
   }
 
-  // --- L4: Segment ---
-  if (segment === 'VIP') {
-    currentPrice -= POLICY.SEGMENT_VIP_DISCOUNT;
-    reasons.push('👑VIP혜택');
-    appliedRules.push({
-      layer: 'L4_Segment',
-      factor: 1,
-      amount: -POLICY.SEGMENT_VIP_DISCOUNT,
-      description: 'VIP 등급 할인'
+  // C. LBS Discount
+  if (userDistanceKm !== undefined && userDistanceKm <= 15) {
+    const rate = 0.10;
+    const discountAmount = Math.floor(currentPrice * rate);
+    currentPrice = currentPrice - discountAmount;
+    factors.push({
+      code: 'LBS_NEARBY',
+      description: 'Local Resident (10%)',
+      amount: -discountAmount,
+      rate
     });
   }
 
-  // --- L5: Floor ---
-  if (currentPrice < POLICY.FLOOR_PRICE) {
-    const diff = POLICY.FLOOR_PRICE - currentPrice;
-    currentPrice = POLICY.FLOOR_PRICE;
-    appliedRules.push({
-      layer: 'L5_Floor',
-      factor: 1,
-      amount: diff,
-      description: '최저가 보정'
+  // --- Step 3: Governance (Max Cap & Floor) ---
+  
+  // Policy: Max 40% total discount from Base Price
+  const maxDiscountAmount = Math.floor(basePrice * 0.40);
+  const minPrice = basePrice - maxDiscountAmount;
+
+  if (currentPrice < minPrice) {
+    const adjustment = minPrice - currentPrice;
+    currentPrice = minPrice;
+    factors.push({
+      code: 'MAX_CAP',
+      description: 'Max Discount Cap (40%)',
+      amount: adjustment, 
+      rate: Number((adjustment / basePrice).toFixed(3))
     });
   }
 
-  currentPrice = Math.floor(currentPrice / 1000) * 1000;
+  // Final Safety
+  if (currentPrice < 0) currentPrice = 0;
+
+  // --- Panic Mode Detection ---
+  // Triggered when:
+  // 1. Less than 30 minutes until tee-off
+  // 2. Still OPEN (not booked)
+  // 3. Randomly triggered (20% chance for drama)
+
+  let panicMode: PricingResult['panicMode'] = {
+    active: false,
+    minutesLeft: Math.floor(timeUntilTeeOffMins),
+    reason: ''
+  };
+
+  if (timeUntilTeeOffMins <= 30 && timeUntilTeeOffMins > 0) {
+    // Deterministic "random" panic based on tee time ID
+    const panicSeed = new SeededRandom(teeTime.id + 999);
+    const shouldPanic = panicSeed.next() > 0.8; // 20% chance
+
+    if (shouldPanic) {
+      panicMode = {
+        active: true,
+        minutesLeft: Math.floor(timeUntilTeeOffMins),
+        reason: timeUntilTeeOffMins <= 10
+          ? '긴급! 곧 마감됩니다'
+          : '공실 임박! 지금 예약하세요'
+      };
+    }
+  }
 
   return {
+    finalPrice: Math.floor(currentPrice), // Ensure integer
     basePrice,
-    finalPrice: currentPrice,
-    reasons,
-    appliedRules
+    discountRate: Number(((basePrice - currentPrice) / basePrice).toFixed(2)),
+    isBlocked: false,
+    factors,
+    stepStatus: {
+      currentStep: stepLevel,
+      nextStepAt: stepLevel < 3 ? new Date(teeOff.getTime() - (stepLevel === 0 ? step1Start : (stepLevel === 1 ? step2Start : step3Start)) * 60000).toISOString() : undefined
+    },
+    panicMode
   };
 }

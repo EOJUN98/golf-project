@@ -368,3 +368,23 @@ Your TUGOL MVP is now connected to Supabase. The pricing engine will calculate d
 - [types/database.ts](types/database.ts) - TypeScript type definitions
 
 **Status:** Ready for testing with live database! 🚀
+
+## 🚨 CRITICAL: Phase 2 User Schema Migration (2026-01-15)
+
+We have updated the Database Schema to align with Supabase Auth (UUIDs).
+**You MUST run the migration script if you set up the DB before Jan 15.**
+
+### Migration Steps
+
+1.  Open the **Supabase SQL Editor**.
+2.  Open the file `SUPABASE-USER-MIGRATION.sql` in this project.
+3.  Copy the entire content.
+4.  Paste it into the Supabase SQL Editor and click **Run**.
+
+### Key Changes
+- **Users Table**: `id` is now a `UUID` (linked to `auth.users`), not a `BIGINT`.
+- **Segment Enum**: Standardized to `FUTURE`, `PRESTIGE`, `SMART`, `CHERRY`.
+- **Triggers**: Added `handle_new_user` trigger to automatically create public user records on signup.
+- **Tee Times & Reservations**: Foreign keys updated to use `UUID`.
+
+---

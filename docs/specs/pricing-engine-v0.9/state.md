@@ -1,26 +1,40 @@
-# State Spec v0.9
+# TUGOL State Spec (v0.9)
 
-> **Scope:** Definition of the State Space (Context) for RL/Bandit models.
+## 1. Purpose
+Defines the State Vector ($S_t$) for Bandit/RL models.
 
-## 1. State Vector (S_t)
-The environment state at time `t` for a specific tee-time slot.
+## 2. State Components
+The context used to decide the Action (Price).
 
-| Dimension | Feature Name | Type | Definition |
-| :--- | :--- | :--- | :--- |
-| **Time** | `lead_time_bucket` | Categorical | `>14d`, `7-14d`, `3-7d`, `1-3d`, `<1d` |
-| | `time_of_day` | Categorical | `MORNING`, `DAY`, `TWILIGHT`, `NIGHT` |
-| | `is_weekend` | Binary | `True` if Sat/Sun/Holiday |
-| **Inventory** | `inventory_remaining` | Integer | Absolute count |
-| | `occupancy_rate` | Float | `(Total - Remaining) / Total` |
-| | `velocity_24h` | Integer | Bookings in last 24h |
-| **Weather** | `rain_prob_bucket` | Categorical | `None`, `Low`, `High` |
-| | `temp_bucket` | Categorical | `Freezing`, `Cold`, `Good`, `Hot` |
-| **Segment** | `segment_id` | Categorical | `WEEKDAY_VALUE`, `WEEKEND_PRIME`, etc. |
+```text
+S = {
+  // Time Context
+  "lead_time_bucket": Categorical (0-1d, 2-3d, 4-7d, >7d),
+  "time_of_day": Categorical (Morning, Day, Twilight),
+  "day_of_week": Categorical (Mon-Sun),
+  "is_weekend": Binary,
+  "season": Categorical (Spring, Summer, Fall, Winter),
 
-## 2. State Enrichment
--   **Competitor Price:** (Future V1.0) Average price of nearby courses.
--   **Event Flag:** (Future V1.0) Local events impacting demand.
+  // Segment Context
+  "segment_id": Categorical (WEEKDAY_VALUE, etc.),
 
-## 3. State Representation
--   For **Bandit (Linear):** One-hot encoding of categorical features + Normalized numerical features.
--   For **RL (Deep):** Embeddings for categorical, Raw scalars for numerical.
+  // Supply Context
+  "inventory_remaining": Integer,
+  "occupancy_rate": Float (0.0-1.0),
+  
+  // Demand Context
+  "booking_velocity_24h": Float,
+  "search_volume_index": Float,
+
+  // Environment Context
+  "weather_bucket": Categorical (Good, Fair, Bad),
+  "temp_bucket": Categorical (Cold, Mild, Hot),
+
+  // Operational Context
+  "current_acceptance_prob": Float (Estimated)
+}
+```
+
+## 3. Feature Engineering
+- **Bucketing:** Continuous variables (Lead time, Temp) are bucketed to reduce state space for Bandit.
+- **Normalization:** Numerical values normalized to [0, 1] range.

@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase';
-import { calculateDynamicPrice, PricingContext, WeatherData } from '@/utils/pricingEngine';
+import { calculatePricing, PricingContext } from '@/utils/pricingEngine';
+import { Database } from '@/types/database';
+
+type TeeTimeStatus = Database['public']['Tables']['tee_times']['Row']['status'];
+type UserSegment = Database['public']['Tables']['users']['Row']['segment'];
 
 export interface TeeTimeWithPricing {
   id: number;
@@ -8,47 +12,68 @@ export interface TeeTimeWithPricing {
   finalPrice: number;
   price: number;
   currency: string;
-  status: 'OPEN' | 'BOOKED' | 'BLOCKED';
+  status: TeeTimeStatus;
   reasons: string[];
-  weather: WeatherData;
-  // Added for compatibility with UI components that might expect these
-  teeOffTime: Date; 
-  discountResult?: any; // Kept as optional to reduce breakage
-}
-
-function generateMockWeather(date: Date, hour: number): WeatherData {
-  const seed = date.getDate() + hour; 
-  const rainProb = (seed * 7) % 100;
-  
-  let sky = '맑음';
-  if (rainProb > 30) sky = '구름';
-  if (rainProb > 60) sky = '비';
-
-  return {
-    sky,
-    temperature: 20 + (seed % 10) - 5,
-    rainProb,
-    windSpeed: (seed % 10),
+  weather: {
+    sky: string;
+    temperature: number;
+    rainProb: number;
+    windSpeed: number;
   };
+  teeOffTime: Date;
+  discountResult?: any;
 }
 
-export async function getTeeTimesByDate(date: Date): Promise<TeeTimeWithPricing[]> {
-  // ✅ 전략: DB 조회는 "날짜 그대로 00:00~23:59 UTC"로 하고,
-  //         클라이언트로 반환할 때 -9시간 보정 (브라우저가 +9시간 할 것을 대비)
-
+export async function getTeeTimesByDate(
+  date: Date,
+  userSegment?: UserSegment,
+  userDistanceKm?: number
+): Promise<TeeTimeWithPricing[]> {
   const year = date.getFullYear();
   const month = date.getMonth();
   const day = date.getDate();
 
-  // 해당 날짜의 00:00:00 UTC 타임스탬프 (시차 변환 없음)
+  // UTC midnight range for query (IMPORTANT: Keep timezone logic intact)
   const utcMidnight = Date.UTC(year, month, day, 0, 0, 0, 0);
-
-  // 해당 날짜의 23:59:59.999 UTC
   const utcDayEnd = utcMidnight + (24 * 60 * 60 * 1000) - 1;
 
   const startISO = new Date(utcMidnight).toISOString();
   const endISO = new Date(utcDayEnd).toISOString();
 
+  // ===================================================================
+  // NEW: Fetch actual logged-in user's segment from database
+  // ===================================================================
+  let actualUserSegment: UserSegment = 'FUTURE'; // Default for non-logged-in users
+  let actualUser: Database['public']['Tables']['users']['Row'] | null = null;
+
+  try {
+    // 1. Get current session
+    const { data: { user: sessionUser } } = await supabase.auth.getUser();
+
+    // 2. If user is logged in, fetch their segment from database
+    if (sessionUser?.id) {
+      const { data: dbUser, error: userError } = await (supabase as any)
+        .from('users')
+        .select('*')
+        .eq('id', sessionUser.id)
+        .single();
+
+      if (!userError && dbUser) {
+        actualUser = dbUser;
+        actualUserSegment = dbUser.segment;
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching user segment:', error);
+    // Fall back to default 'FUTURE' if error occurs
+  }
+
+  // Override with parameter if provided (for testing/admin purposes)
+  const finalUserSegment = userSegment || actualUserSegment;
+
+  // ===================================================================
+  // Fetch tee times from database
+  // ===================================================================
   const { data: teeTimes, error } = await supabase
     .from('tee_times')
     .select('*')
@@ -61,42 +86,81 @@ export async function getTeeTimesByDate(date: Date): Promise<TeeTimeWithPricing[
     return [];
   }
 
-  const bookingTime = new Date();
-
-  return teeTimes.map((item: any) => {
-    // 1. 원본 시간 (DB에 있는 시간 그대로, Pricing Engine용)
-    const originalDate = new Date(item.tee_off);
-
-    // 2. 화면 표시용 시간 (-9시간 보정)
-    // 브라우저가 +9시간 할 것을 대비해 미리 -9시간을 함
-    const displayDate = new Date(originalDate.getTime() - (9 * 60 * 60 * 1000));
-
-    // 3. Mock Weather 생성 (원본 시간 기준)
-    const mockWeather = generateMockWeather(originalDate, originalDate.getHours());
-
-    // 4. Pricing Engine 계산 (원본 시간 기준)
+  return teeTimes.map((teeTime: any) => {
+    // Build pricing context
     const ctx: PricingContext = {
-      teeOff: originalDate, // 중요: 원본 시간을 넣어야 함
-      bookingTime: bookingTime,
-      basePriceInput: item.base_price,
-      weather: mockWeather,
-      segment: 'Base',
+      teeTime,
+      userDistanceKm,
     };
 
-    const result = calculateDynamicPrice(ctx);
+    // Create user object for pricing engine with actual DB data or mock
+    if (actualUser) {
+      // Use actual logged-in user data
+      ctx.user = actualUser;
+    } else if (finalUserSegment) {
+      // Create mock user with the determined segment
+      ctx.user = {
+        id: '00000000-0000-0000-0000-000000000000',
+        email: 'mock@example.com',
+        name: null,
+        phone: null,
+        segment: finalUserSegment,
+        cherry_score: 0,
+        terms_agreed_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: null,
+        blacklisted: false,
+        blacklist_reason: null,
+        blacklisted_at: null,
+        blacklisted_by: null,
+        no_show_count: 0,
+        last_no_show_at: null,
+        total_bookings: 0,
+        total_spent: 0,
+        avg_booking_value: 0,
+        location_lat: null,
+        location_lng: null,
+        location_address: null,
+        distance_to_club_km: null,
+        visit_count: 0,
+        avg_stay_minutes: null,
+        last_visited_at: null,
+        segment_override_by: null,
+        segment_override_at: null,
+        marketing_agreed: false,
+        push_agreed: false,
+        is_admin: false,
+        is_super_admin: false,
+      };
+    }
+
+    const result = calculatePricing(ctx);
+
+    // Format reasons from factors
+    const reasons = result.factors.map(f => f.description);
+    if (result.isBlocked && result.blockReason) {
+      reasons.unshift(`⚠️ ${result.blockReason}`);
+    }
+
+    // Extract weather display (from DB or default)
+    const weather = teeTime.weather_condition || {
+      sky: '맑음',
+      temperature: 20,
+      rainProb: 0,
+      windSpeed: 0,
+    };
 
     return {
-      id: item.id,
-      tee_off: displayDate.toISOString(), // 중요: 화면에는 보정된 시간을 전달
+      id: teeTime.id,
+      tee_off: teeTime.tee_off,
       basePrice: result.basePrice,
       finalPrice: result.finalPrice,
       price: result.finalPrice,
-      currency: item.currency || 'KRW',
-      status: item.status,
-      reasons: result.reasons,
-      weather: mockWeather,
-      // Backward compatibility fields
-      teeOffTime: displayDate, // 화면 표시용 Date 객체도 보정된 시간 사용
+      currency: 'KRW',
+      status: teeTime.status,
+      reasons,
+      weather,
+      teeOffTime: new Date(teeTime.tee_off),
       discountResult: result,
     };
   });

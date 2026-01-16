@@ -1,144 +1,154 @@
 import { NextResponse } from 'next/server';
+import { calculatePricing, PricingContext, PricingResult } from '@/utils/pricingEngine';
+import { Database } from '@/types/database';
+
+type TeeTime = Database['public']['Tables']['tee_times']['Row'];
+type Weather = Database['public']['Tables']['weather_cache']['Row'];
+type User = Database['public']['Tables']['users']['Row'];
 
 // ==================================================================
-// 1. [설정] 인증키 및 골프장 위치 (환경변수에서 불러오기)
+// 1. [Mock Data] Since we don't have a live DB yet
 // ==================================================================
-const SERVICE_KEY = process.env.WEATHER_API_KEY!; // ! = 무조건 있다고 TypeScript에 알려줌
-
-const GRID_X = parseInt(process.env.GRID_X || '54'); // 인천 (Club 72)
-const GRID_Y = parseInt(process.env.GRID_Y || '123');
-
-const CONFIG = {
-  MAX_DISCOUNT_RATE: 0.4, // 최대 40%
-  RAIN_DISCOUNT: 0.2,     // 비 오면 20%
-  CLOUDY_DISCOUNT: 0.1,   // 흐리면 10%
-  URGENT_DISCOUNT: 0.15,  // 임박 15%
-  LBS_DISCOUNT: 0.1,      // 지역주민 10%
-};
-
-// ==================================================================
-// 2. [함수] 기상청 시간 계산 & API 호출 (app.js 로직 이식)
-// ==================================================================
-async function getRealWeather() {
+function getMockData() {
   const now = new Date();
-  
-  // 한국 시간(KST) 보정
-  const kstOffset = 9 * 60 * 60 * 1000;
-  const kstDate = new Date(now.getTime() + kstOffset);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
 
-  const timeBlocks = [2, 5, 8, 11, 14, 17, 20, 23];
-  let baseHour = 23;
-  let baseDateStr = "";
-  
-  let hour = kstDate.getUTCHours();
-  const safeHour = hour - 1; // 1시간 전 데이터 요청 (안전빵)
+  // Mock Weather
+  const weather: Weather = {
+    id: 1,
+    target_date: tomorrow.toISOString().split('T')[0],
+    target_hour: 12,
+    pop: 70, // Rain probability
+    rn1: 2,  // Rainfall 2mm
+    wsd: 3
+  };
 
-  for (let t of timeBlocks) if (t <= safeHour) baseHour = t;
+  // Mock User
+  const user: User = {
+    id: 'mock-user-id',
+    email: 'test@tugol.com',
+    name: null,
+    phone: null,
+    segment: 'PRESTIGE',
+    cherry_score: 10,
+    terms_agreed_at: now.toISOString(),
+    created_at: now.toISOString(),
+    updated_at: null,
+    blacklisted: false,
+    blacklist_reason: null,
+    blacklisted_at: null,
+    blacklisted_by: null,
+    no_show_count: 0,
+    last_no_show_at: null,
+    total_bookings: 5,
+    total_spent: 500000,
+    avg_booking_value: 100000,
+    location_lat: null,
+    location_lng: null,
+    location_address: null,
+    distance_to_club_km: null,
+    visit_count: 0,
+    avg_stay_minutes: null,
+    last_visited_at: null,
+    segment_override_by: null,
+    segment_override_at: null,
+    marketing_agreed: false,
+    push_agreed: false,
+    is_admin: false,
+    is_super_admin: false
+  };
 
-  // 날짜 계산
-  if (hour < 2) {
-    const yesterday = new Date(kstDate.getTime() - 24 * 60 * 60 * 1000);
-    const yYear = yesterday.getUTCFullYear();
-    const yMonth = ('0' + (yesterday.getUTCMonth() + 1)).slice(-2);
-    const yDay = ('0' + yesterday.getUTCDate()).slice(-2);
-    baseDateStr = `${yYear}${yMonth}${yDay}`;
-    baseHour = 23;
-  } else {
-    const year = kstDate.getUTCFullYear();
-    const month = ('0' + (kstDate.getUTCMonth() + 1)).slice(-2);
-    const day = ('0' + kstDate.getUTCDate()).slice(-2);
-    baseDateStr = `${year}${month}${day}`;
-  }
-  const baseTimeStr = ('0' + baseHour).slice(-2) + "00";
-
-  // API 호출
-  const url = `http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst`;
-  const queryParams = '?' + new URLSearchParams({
-    serviceKey: SERVICE_KEY,
-    pageNo: '1', numOfRows: '50', dataType: 'JSON',
-    base_date: baseDateStr, base_time: baseTimeStr, nx: String(GRID_X), ny: String(GRID_Y)
-  }).toString();
-
-  try {
-    const res = await fetch(url + queryParams, { next: { revalidate: 600 } }); // 10분 캐싱
-    const json = await res.json();
-    
-    if (json.response?.header?.resultCode === '00') {
-      const items = json.response.body.items.item;
-      // 강수확률(POP) 찾기
-      const popItem = items.find((item: any) => item.category === 'POP');
-      const rainProb = popItem ? parseInt(popItem.fcstValue) : 0;
-      return { rainProb, status: 'success' };
+  // Mock Tee Times
+  const teeTimes: TeeTime[] = [
+    {
+      id: 101,
+      golf_club_id: 1,
+      tee_off: new Date(now.getTime() + 90 * 60000).toISOString(),
+      base_price: 250000,
+      status: 'OPEN',
+      weather_condition: null,
+      updated_by: null,
+      updated_at: null,
+      reserved_by: null,
+      reserved_at: null
+    },
+    {
+      id: 102,
+      golf_club_id: 1,
+      tee_off: new Date(now.getTime() + 180 * 60000).toISOString(),
+      base_price: 200000,
+      status: 'OPEN',
+      weather_condition: null,
+      updated_by: null,
+      updated_at: null,
+      reserved_by: null,
+      reserved_at: null
+    },
+    {
+      id: 103,
+      golf_club_id: 1,
+      tee_off: new Date(now.getTime() + 45 * 60000).toISOString(),
+      base_price: 150000,
+      status: 'OPEN',
+      weather_condition: null,
+      updated_by: null,
+      updated_at: null,
+      reserved_by: null,
+      reserved_at: null
     }
-    return { rainProb: 0, status: 'api_error' }; // 에러 시 맑음 처리
-  } catch (e) {
-    console.error(e);
-    return { rainProb: 0, status: 'network_error' };
-  }
+  ];
+
+  return { weather, user, teeTimes };
 }
 
 // ==================================================================
-// 3. [메인] API 응답 핸들러 (GET)
+// 2. [API Handler]
 // ==================================================================
 export async function GET() {
-  // 1. 진짜 날씨 가져오기
-  const weatherData = await getRealWeather();
-  const rainProb = weatherData.rainProb; // 실제 강수확률
-  
-  // 2. 가상 유저 & 티타임
-  const mockUser = { isNearby: true, segment: 'PRESTIGE' };
-  let teeTimes = [
-    { time: '07:20', basePrice: 250000 },
-    { time: '08:00', basePrice: 250000 },
-    { time: '13:00', basePrice: 280000 },
-  ];
+  const { weather, user, teeTimes } = getMockData();
+  const now = new Date();
 
-  // 3. 가격 계산 로직
-  const calculatedTimes = teeTimes.map((tee) => {
-    let finalPrice = tee.basePrice;
-    let discountReasons = [];
-    let totalDiscountRate = 0;
+  // Calculate Price for each Tee Time using the Engine
+  const results = teeTimes.map(teeTime => {
+    const context: PricingContext = {
+      teeTime,
+      user, // Simulate logged-in user
+      weather,
+      userDistanceKm: 10, // Mock LBS: 10km away
+      now
+    };
 
-    // (A) 진짜 날씨 반영
-    if (rainProb >= 60) {
-      totalDiscountRate += CONFIG.RAIN_DISCOUNT;
-      discountReasons.push(`☔️ 비 예보(${rainProb}%)`);
-    } else if (rainProb >= 30) {
-      totalDiscountRate += CONFIG.CLOUDY_DISCOUNT;
-      discountReasons.push(`☁️ 흐림(${rainProb}%)`);
-    }
-
-    // (B) 임박 티 & LBS
-    const hour = parseInt(tee.time.split(':')[0]);
-    if (hour < 9) {
-      totalDiscountRate += CONFIG.URGENT_DISCOUNT;
-      discountReasons.push('⏰ 임박 티');
-    }
-    if (mockUser.isNearby) {
-      totalDiscountRate += CONFIG.LBS_DISCOUNT;
-      discountReasons.push('📍 이웃 할인');
-    }
-
-    // (C) 수익 방어
-    if (totalDiscountRate > CONFIG.MAX_DISCOUNT_RATE) {
-      totalDiscountRate = CONFIG.MAX_DISCOUNT_RATE;
-      discountReasons.push('🛡 한도 적용');
-    }
-
-    finalPrice = tee.basePrice * (1 - totalDiscountRate);
-
+    const result = calculatePricing(context);
+    
+    // Map to Frontend expected format (if needed, or return raw result)
+    // Here we return a structure compatible with the frontend components
     return {
-      ...tee,
-      finalPrice: Math.round(finalPrice / 1000) * 1000,
-      discountRate: Math.round(totalDiscountRate * 100),
-      reasons: discountReasons,
+      ...teeTime,
+      finalPrice: result.finalPrice,
+      originalPrice: result.basePrice,
+      discountRate: Math.round(result.discountRate * 100),
+      isBlocked: result.isBlocked,
+      blockReason: result.blockReason,
+      factors: result.factors,
+      stepStatus: result.stepStatus
     };
   });
 
   return NextResponse.json({
     status: 'success',
-    data: calculatedTimes,
-    user: mockUser,
-    weather: { rainProb, isRaining: rainProb >= 50 } // 프론트엔드로 날씨 정보 전달
+    data: results,
+    user: {
+      segment: user.segment,
+      isNearby: true
+    },
+    weather: {
+      rainProb: weather.pop,
+      status: weather.pop >= 60 ? 'Rain' : (weather.pop >= 30 ? 'Cloudy' : 'Sunny')
+    },
+    meta: {
+      engine: 'v2-step-down',
+      generatedAt: now.toISOString()
+    }
   });
 }

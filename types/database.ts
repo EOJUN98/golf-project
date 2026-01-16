@@ -1,131 +1,318 @@
-// ==================================================================
-// TUGOL 프로젝트 데이터베이스 타입 정의
-// ==================================================================
-
-// ------------------------------------------------------------------
-// 1. ENUM 타입 정의
-// ------------------------------------------------------------------
-
-export type UserSegment = 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY';
-
-export type TeeTimeStatus = 'OPEN' | 'BOOKED' | 'BLOCKED';
-
-// ------------------------------------------------------------------
-// 2. Users 테이블 타입
-// ------------------------------------------------------------------
-
-export interface User {
-  id: string; // UUID
-  email: string;
-  name: string;
-  phone: string;
-  user_segment: UserSegment;
-  cherry_score: number;
-  location?: {
-    lat: number;
-    lng: number;
-    address?: string;
-  };
-  visit_count: number;
-  avg_stay_time: number;
-  created_at: string;
-  updated_at: string;
-}
-
-// ------------------------------------------------------------------
-// 3. TeeTimes 테이블 타입
-// ------------------------------------------------------------------
-
-export interface TeeTime {
-  id: number; // Integer based on usage
-  tee_off: string; // ISO 8601 format
-  base_price: number;
-  status: TeeTimeStatus;
-  
-  // 예약 관련 (Reserved)
-  reserved_by?: string | null; // User ID
-  reserved_at?: string | null;
-
-  // DB에 존재하는지 불확실하나 코드에서 사용될 수 있는 필드들 (Optional로 처리)
-  current_price?: number;
-  current_step?: number;
-  next_step_at?: string;
-  discount_reasons?: string[];
-  weather_snapshot?: any;
-
-  created_at?: string;
-  updated_at?: string;
-}
-
-// ------------------------------------------------------------------
-// 4. Reservations 테이블 타입
-// ------------------------------------------------------------------
-
-export interface Reservation {
-  id: number; // Integer based on usage
-  user_id: string;
-  tee_time_id: number;
-  final_price: number;
-  discount_breakdown: any; // JSONB
-  agreed_penalty: boolean;
-  payment_status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED';
-  created_at: string;
-  updated_at?: string;
-}
-
-// ------------------------------------------------------------------
-// 5. 프라이싱 관련 타입 (계산용)
-// ------------------------------------------------------------------
-
-export interface DiscountResult {
-  finalPrice: number;
-  totalDiscountRate: number;
-  reasons: string[];
-  breakdown: {
-    weather?: number;
-    time?: number;
-    lbs?: number;
-    segment?: number;
-  };
-}
-
-export interface WeatherData {
-  rainProb: number;
-  rainfall?: number;
-  temperature?: number;
-  status: 'success' | 'api_error' | 'network_error';
-  sky?: string; // Optional for UI
-}
-
-export interface LocationInfo {
-  lat: number;
-  lng: number;
-  distanceToClub?: number;
-  isNearby: boolean;
-}
-
-// ------------------------------------------------------------------
-// 6. Supabase Database 타입
-// ------------------------------------------------------------------
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
 
 export interface Database {
   public: {
     Tables: {
       users: {
-        Row: User;
-        Insert: Omit<User, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<User, 'id' | 'created_at' | 'updated_at'>>;
-      };
+        Row: {
+          id: string // UUID referencing auth.users
+          email: string
+          name: string | null
+          phone: string | null
+          segment: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          cherry_score: number
+          terms_agreed_at: string | null
+          created_at: string
+          updated_at: string | null
+          // Blacklist management
+          blacklisted: boolean
+          blacklist_reason: string | null
+          blacklisted_at: string | null
+          blacklisted_by: string | null
+          // Behavior tracking
+          no_show_count: number
+          last_no_show_at: string | null
+          total_bookings: number
+          total_spent: number
+          avg_booking_value: number
+          // Location data
+          location_lat: number | null
+          location_lng: number | null
+          location_address: string | null
+          distance_to_club_km: number | null
+          // Visit tracking
+          visit_count: number
+          avg_stay_minutes: number | null
+          last_visited_at: string | null
+          // Segment override
+          segment_override_by: string | null
+          segment_override_at: string | null
+          // Marketing
+          marketing_agreed: boolean
+          push_agreed: boolean
+          // Admin permissions
+          is_admin: boolean
+          is_super_admin: boolean
+        }
+        Insert: {
+          id: string // UUID
+          email: string
+          name?: string | null
+          phone?: string | null
+          segment?: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          cherry_score?: number
+          terms_agreed_at?: string | null
+          created_at?: string
+          updated_at?: string | null
+          blacklisted?: boolean
+          blacklist_reason?: string | null
+          blacklisted_at?: string | null
+          blacklisted_by?: string | null
+          no_show_count?: number
+          last_no_show_at?: string | null
+          total_bookings?: number
+          total_spent?: number
+          avg_booking_value?: number
+          location_lat?: number | null
+          location_lng?: number | null
+          location_address?: string | null
+          distance_to_club_km?: number | null
+          visit_count?: number
+          avg_stay_minutes?: number | null
+          last_visited_at?: string | null
+          segment_override_by?: string | null
+          segment_override_at?: string | null
+          marketing_agreed?: boolean
+          push_agreed?: boolean
+          is_admin?: boolean
+          is_super_admin?: boolean
+        }
+        Update: {
+          id?: string
+          email?: string
+          name?: string | null
+          phone?: string | null
+          segment?: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          cherry_score?: number
+          terms_agreed_at?: string | null
+          created_at?: string
+          updated_at?: string | null
+          blacklisted?: boolean
+          blacklist_reason?: string | null
+          blacklisted_at?: string | null
+          blacklisted_by?: string | null
+          no_show_count?: number
+          last_no_show_at?: string | null
+          total_bookings?: number
+          total_spent?: number
+          avg_booking_value?: number
+          location_lat?: number | null
+          location_lng?: number | null
+          location_address?: string | null
+          distance_to_club_km?: number | null
+          visit_count?: number
+          avg_stay_minutes?: number | null
+          last_visited_at?: string | null
+          segment_override_by?: string | null
+          segment_override_at?: string | null
+          marketing_agreed?: boolean
+          push_agreed?: boolean
+          is_admin?: boolean
+          is_super_admin?: boolean
+        }
+      }
+      weather_cache: {
+        Row: {
+          id: number
+          target_date: string
+          target_hour: number
+          pop: number
+          rn1: number
+          wsd: number
+        }
+        Insert: {
+          id?: number
+          target_date: string
+          target_hour: number
+          pop: number
+          rn1: number
+          wsd: number
+        }
+        Update: {
+          id?: number
+          target_date?: string
+          target_hour?: number
+          pop?: number
+          rn1?: number
+          wsd?: number
+        }
+      }
       tee_times: {
-        Row: TeeTime;
-        Insert: Omit<TeeTime, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<TeeTime, 'id' | 'created_at' | 'updated_at'>>;
-      };
+        Row: {
+          id: number
+          golf_club_id: number
+          tee_off: string
+          base_price: number
+          status: 'OPEN' | 'BOOKED' | 'BLOCKED'
+          weather_condition: Json | null
+          reserved_by: string | null // UUID
+          reserved_at: string | null
+          updated_by: string | null // UUID
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          golf_club_id?: number
+          tee_off: string
+          base_price: number
+          status?: 'OPEN' | 'BOOKED' | 'BLOCKED'
+          weather_condition?: Json | null
+          reserved_by?: string | null // UUID
+          reserved_at?: string | null
+          updated_by?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          golf_club_id?: number
+          tee_off?: string
+          base_price?: number
+          status?: 'OPEN' | 'BOOKED' | 'BLOCKED'
+          weather_condition?: Json | null
+          reserved_by?: string | null // UUID
+          reserved_at?: string | null
+          updated_by?: string | null
+          updated_at?: string | null
+        }
+      }
+      club_admins: {
+        Row: {
+          id: number
+          user_id: string
+          golf_club_id: number
+          created_at: string
+        }
+        Insert: {
+          id?: number
+          user_id: string
+          golf_club_id: number
+          created_at?: string
+        }
+        Update: {
+          id?: number
+          user_id?: string
+          golf_club_id?: number
+          created_at?: string
+        }
+      }
+      golf_clubs: {
+        Row: {
+          id: number
+          name: string
+          location_name: string
+          location_lat: number | null
+          location_lng: number | null
+        }
+        Insert: {
+          id?: number
+          name: string
+          location_name: string
+          location_lat?: number | null
+          location_lng?: number | null
+        }
+        Update: {
+          id?: number
+          name?: string
+          location_name?: string
+          location_lat?: number | null
+          location_lng?: number | null
+        }
+      }
       reservations: {
-        Row: Reservation;
-        Insert: Omit<Reservation, 'id' | 'created_at' | 'updated_at'>;
-        Update: Partial<Omit<Reservation, 'id' | 'created_at' | 'updated_at'>>;
-      };
-    };
-  };
+        Row: {
+          id: string // UUID
+          tee_time_id: number
+          user_id: string // UUID
+          base_price: number
+          final_price: number
+          discount_breakdown: Json | null
+          payment_key: string | null
+          payment_status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+          created_at: string
+        }
+        Insert: {
+          id?: string // UUID
+          tee_time_id: number
+          user_id: string // UUID
+          base_price: number
+          final_price: number
+          discount_breakdown?: Json | null
+          payment_key?: string | null
+          payment_status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          tee_time_id?: number
+          user_id?: string
+          base_price?: number
+          final_price?: number
+          discount_breakdown?: Json | null
+          payment_key?: string | null
+          payment_status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+          created_at?: string
+        }
+      }
+      notifications: {
+        Row: {
+          id: string // UUID
+          user_id: string | null
+          tee_time_id: number | null
+          type: 'PANIC_DEAL' | 'WEATHER_ALERT' | 'BOOKING_CONFIRMATION' | 'BOOKING_REMINDER' | 'PRICE_DROP' | 'CUSTOM'
+          title: string
+          message: string
+          payload: Json
+          status: 'PENDING' | 'SENT' | 'FAILED' | 'READ' | 'DISMISSED'
+          created_at: string
+          sent_at: string | null
+          read_at: string | null
+          priority: number
+          expires_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id?: string | null
+          tee_time_id?: number | null
+          type: 'PANIC_DEAL' | 'WEATHER_ALERT' | 'BOOKING_CONFIRMATION' | 'BOOKING_REMINDER' | 'PRICE_DROP' | 'CUSTOM'
+          title: string
+          message: string
+          payload?: Json
+          status?: 'PENDING' | 'SENT' | 'FAILED' | 'READ' | 'DISMISSED'
+          created_at?: string
+          sent_at?: string | null
+          read_at?: string | null
+          priority?: number
+          expires_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string | null
+          tee_time_id?: number | null
+          type?: 'PANIC_DEAL' | 'WEATHER_ALERT' | 'BOOKING_CONFIRMATION' | 'BOOKING_REMINDER' | 'PRICE_DROP' | 'CUSTOM'
+          title?: string
+          message?: string
+          payload?: Json
+          status?: 'PENDING' | 'SENT' | 'FAILED' | 'READ' | 'DISMISSED'
+          created_at?: string
+          sent_at?: string | null
+          read_at?: string | null
+          priority?: number
+          expires_at?: string | null
+        }
+      }
+    }
+    Enums: {
+      segment_type: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+      teetime_status: 'OPEN' | 'BOOKED' | 'BLOCKED'
+      payment_status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+      notification_type: 'PANIC_DEAL' | 'WEATHER_ALERT' | 'BOOKING_CONFIRMATION' | 'BOOKING_REMINDER' | 'PRICE_DROP' | 'CUSTOM'
+      notification_status: 'PENDING' | 'SENT' | 'FAILED' | 'READ' | 'DISMISSED'
+    }
+  }
 }

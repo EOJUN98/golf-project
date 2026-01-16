@@ -5,29 +5,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { calculateDynamicPrice, PricingContext, WeatherData as EngineWeatherData } from '@/utils/pricingEngine';
-import { getWeatherForDate } from '@/utils/supabase/queries';
-import { UserSegment as DBUserSegment } from '@/types/database';
+import { calculatePricing, PricingContext, PricingResult } from '@/utils/pricingEngine';
+import { Database } from '@/types/database';
 
-// Helper to map DB Weather to Engine Weather
-function mapWeatherToEngine(dbWeather: any): EngineWeatherData {
-  return {
-    sky: dbWeather.sky || '맑음',
-    temperature: dbWeather.temperature || 20,
-    rainProb: dbWeather.rainProb || 0,
-    windSpeed: dbWeather.windSpeed || 2, // Default wind speed
-  };
-}
-
-// Helper to map DB Segment to Engine Segment
-function mapSegmentToEngine(dbSegment: DBUserSegment): 'VIP' | 'Smart' | 'Base' | 'Cherry' {
-  switch (dbSegment) {
-    case 'PRESTIGE': return 'VIP';
-    case 'SMART': return 'Smart';
-    case 'CHERRY': return 'Cherry';
-    default: return 'Base';
-  }
-}
+type DBUserSegment = Database['public']['Enums']['segment_type'];
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,11 +24,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Fetch Tee Time from DB
-    const { data: teeTime, error: teeTimeError } = await supabase
+    const { data: teeTimeData, error: teeTimeError } = await supabase
       .from('tee_times')
       .select('*')
       .eq('id', teeTimeId)
       .single();
+
+    const teeTime = teeTimeData as any;
 
     if (teeTimeError || !teeTime) {
       return NextResponse.json(
@@ -63,30 +46,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Security Check: Recalculate Price on Server (Prevent Tampering)
+    // 3. Security Check: Recalculate Price on Server
     const teeOffDate = new Date(teeTime.tee_off);
-    const dbWeather = await getWeatherForDate(teeOffDate);
     
-    // Map Context
-    const engineWeather = mapWeatherToEngine(dbWeather);
-    const dbUserSegment: DBUserSegment = 'PRESTIGE'; // Should fetch from User table in real app
-    const engineSegment = mapSegmentToEngine(dbUserSegment);
-    
+    // Fetch Weather (Assuming getWeatherForDate returns matching shape or we map it)
+    // Note: In a real scenario, ensure getWeatherForDate returns the correct Weather Cache row.
+    // For now, we'll fetch from 'weather_cache' directly or use the helper if it exists.
+    const { data: weatherData } = await supabase
+      .from('weather_cache')
+      .select('*')
+      .eq('target_date', teeOffDate.toISOString().split('T')[0])
+      .order('target_hour', { ascending: true }) // closest hour logic needed?
+      .limit(1)
+      .single();
+
+    // Fetch User for Segment
+    const { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
     const context: PricingContext = {
-      teeOff: teeOffDate,
-      bookingTime: new Date(),
-      basePriceInput: teeTime.base_price,
-      weather: engineWeather,
-      segment: engineSegment,
+      teeTime: teeTime,
+      user: user || undefined, // If user fetch fails, treat as anonymous/default?
+      weather: weatherData || undefined,
+      now: new Date()
     };
 
-    const serverPricing = calculateDynamicPrice(context);
+    const serverPricing: PricingResult = calculatePricing(context);
 
     // Tolerance check
     if (serverPricing.finalPrice !== clientProvidedPrice) {
       console.warn(`Price Mismatch! Client: ${clientProvidedPrice}, Server: ${serverPricing.finalPrice}`);
-      // For V2 transition, strict check might be annoying if client/server clock drifts slightly affecting LMD.
-      // But adhering to strict security for now.
       return NextResponse.json(
         { error: 'Price validation failed. Please refresh and try again.', serverPrice: serverPricing.finalPrice },
         { status: 400 }
@@ -94,15 +86,15 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Create Reservation
-    const { data: reservation, error: reservationError } = await supabase
+    const { data: reservation, error: reservationError } = await (supabase as any)
       .from('reservations')
       .insert({
         user_id: userId,
         tee_time_id: teeTimeId,
+        base_price: serverPricing.basePrice,
         final_price: serverPricing.finalPrice,
-        discount_breakdown: serverPricing.appliedRules, // Save V2 breakdown
-        payment_status: 'PENDING',
-        agreed_penalty: true,
+        discount_breakdown: serverPricing.factors,
+        payment_status: 'PENDING'
       })
       .select()
       .single();
@@ -112,18 +104,18 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Update Tee Time Status
-    const { error: updateError } = await supabase
+    const { error: updateError } = await (supabase as any)
       .from('tee_times')
       .update({
         status: 'BOOKED',
         reserved_by: userId,
-        reserved_at: new Date().toISOString(),
+        reserved_at: new Date().toISOString()
       })
       .eq('id', teeTimeId);
 
     if (updateError) {
-      // Rollback
-      await supabase.from('reservations').delete().eq('id', reservation.id);
+      // Rollback (simplified)
+      await (supabase as any).from('reservations').delete().eq('id', reservation.id);
       throw updateError;
     }
 
