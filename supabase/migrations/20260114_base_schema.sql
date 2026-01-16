@@ -1,0 +1,107 @@
+-- Extensions
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- USERS
+CREATE TABLE IF NOT EXISTS public.users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  name TEXT,
+  phone TEXT,
+  segment TEXT NOT NULL DEFAULT 'FUTURE',
+  cherry_score INTEGER NOT NULL DEFAULT 0,
+  terms_agreed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  is_super_admin BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS name TEXT,
+  ADD COLUMN IF NOT EXISTS phone TEXT,
+  ADD COLUMN IF NOT EXISTS segment TEXT NOT NULL DEFAULT 'FUTURE',
+  ADD COLUMN IF NOT EXISTS cherry_score INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS terms_agreed_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- GOLF CLUBS
+CREATE TABLE IF NOT EXISTS public.golf_clubs (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  location_name TEXT NOT NULL DEFAULT '',
+  location_lat DECIMAL(10, 8),
+  location_lng DECIMAL(11, 8)
+);
+
+ALTER TABLE public.golf_clubs
+  ADD COLUMN IF NOT EXISTS location_name TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS location_lat DECIMAL(10, 8),
+  ADD COLUMN IF NOT EXISTS location_lng DECIMAL(11, 8);
+
+-- TEE TIMES
+CREATE TABLE IF NOT EXISTS public.tee_times (
+  id BIGSERIAL PRIMARY KEY,
+  golf_club_id BIGINT NOT NULL REFERENCES public.golf_clubs(id),
+  tee_off TIMESTAMPTZ NOT NULL,
+  base_price INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'BOOKED', 'BLOCKED')),
+  weather_condition JSONB,
+  reserved_by TEXT,
+  reserved_at TIMESTAMPTZ,
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ
+);
+
+ALTER TABLE public.tee_times
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'OPEN',
+  ADD COLUMN IF NOT EXISTS weather_condition JSONB,
+  ADD COLUMN IF NOT EXISTS reserved_by TEXT,
+  ADD COLUMN IF NOT EXISTS reserved_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS updated_by TEXT,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ;
+
+-- CLUB ADMINS
+CREATE TABLE IF NOT EXISTS public.club_admins (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  golf_club_id BIGINT NOT NULL REFERENCES public.golf_clubs(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, golf_club_id)
+);
+
+ALTER TABLE public.club_admins
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- RESERVATIONS
+CREATE TABLE IF NOT EXISTS public.reservations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tee_time_id BIGINT NOT NULL REFERENCES public.tee_times(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  base_price INTEGER NOT NULL,
+  final_price INTEGER NOT NULL,
+  discount_breakdown JSONB,
+  payment_key TEXT,
+  payment_status TEXT NOT NULL DEFAULT 'PENDING' CHECK (payment_status IN ('PENDING', 'PAID', 'CANCELLED', 'REFUNDED')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.reservations
+  ADD COLUMN IF NOT EXISTS base_price INTEGER,
+  ADD COLUMN IF NOT EXISTS final_price INTEGER,
+  ADD COLUMN IF NOT EXISTS discount_breakdown JSONB,
+  ADD COLUMN IF NOT EXISTS payment_key TEXT,
+  ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'PENDING',
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- WEATHER CACHE
+CREATE TABLE IF NOT EXISTS public.weather_cache (
+  id BIGSERIAL PRIMARY KEY,
+  target_date DATE NOT NULL,
+  target_hour INTEGER NOT NULL,
+  pop INTEGER NOT NULL,
+  rn1 INTEGER NOT NULL,
+  wsd INTEGER NOT NULL
+);
