@@ -29,16 +29,15 @@ export async function getTeeTimesByDate(
   userSegment?: UserSegment,
   userDistanceKm?: number
 ): Promise<TeeTimeWithPricing[]> {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const day = date.getDate();
-
-  // UTC midnight range for query (IMPORTANT: Keep timezone logic intact)
-  const utcMidnight = Date.UTC(year, month, day, 0, 0, 0, 0);
-  const utcDayEnd = utcMidnight + (24 * 60 * 60 * 1000) - 1;
-
-  const startISO = new Date(utcMidnight).toISOString();
-  const endISO = new Date(utcDayEnd).toISOString();
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const dateStr = formatter.format(date);
+  const startISO = new Date(`${dateStr}T00:00:00+09:00`).toISOString();
+  const endISO = new Date(`${dateStr}T23:59:59.999+09:00`).toISOString();
 
   // ===================================================================
   // NEW: Fetch actual logged-in user's segment from database
@@ -131,6 +130,11 @@ export async function getTeeTimesByDate(
         push_agreed: false,
         is_admin: false,
         is_super_admin: false,
+        // SDD-04: Suspension fields
+        is_suspended: false,
+        suspended_reason: null,
+        suspended_at: null,
+        suspension_expires_at: null,
       };
     }
 

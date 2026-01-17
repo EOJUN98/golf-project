@@ -9,6 +9,19 @@ type TeeTimeInsert = Database['public']['Tables']['tee_times']['Insert'];
 type TeeTimeUpdate = Database['public']['Tables']['tee_times']['Update'];
 type GolfClub = Database['public']['Tables']['golf_clubs']['Row'];
 
+function getKstDayRange(date: Date) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const dateStr = formatter.format(date);
+  const start = new Date(`${dateStr}T00:00:00+09:00`);
+  const end = new Date(`${dateStr}T23:59:59.999+09:00`);
+  return { startISO: start.toISOString(), endISO: end.toISOString() };
+}
+
 // =====================================================
 // Helper: Get current user and check permissions
 // =====================================================
@@ -144,15 +157,8 @@ export async function getTeeTimes(
       return { success: false, error: 'Access denied to this golf club' };
     }
 
-    // Calculate date range (UTC)
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const day = date.getDate();
-    const utcMidnight = Date.UTC(year, month, day, 0, 0, 0, 0);
-    const utcDayEnd = utcMidnight + (24 * 60 * 60 * 1000) - 1;
-
-    const startISO = new Date(utcMidnight).toISOString();
-    const endISO = new Date(utcDayEnd).toISOString();
+    // Calculate date range in KST (Asia/Seoul)
+    const { startISO, endISO } = getKstDayRange(date);
 
     // Query tee times
     const { data, error } = await (supabase as any)

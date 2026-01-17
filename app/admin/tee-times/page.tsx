@@ -93,7 +93,7 @@ export default function AdminTeeTimesPage() {
 
     // Combine date and time
     const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    const teeOffISO = `${dateStr}T${formData.tee_off_time}:00.000Z`;
+    const teeOffISO = new Date(`${dateStr}T${formData.tee_off_time}:00`).toISOString();
 
     const result = await createTeeTime({
       golf_club_id: selectedClubId,
@@ -123,7 +123,7 @@ export default function AdminTeeTimesPage() {
     // If time changed, include tee_off
     if (formData.tee_off_time) {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      payload.tee_off = `${dateStr}T${formData.tee_off_time}:00.000Z`;
+      payload.tee_off = new Date(`${dateStr}T${formData.tee_off_time}:00`).toISOString();
     }
 
     const result = await updateTeeTime(editingTeeTime.id, payload);
