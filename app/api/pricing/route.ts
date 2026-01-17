@@ -48,6 +48,11 @@ function getMockData() {
     location_lng: null,
     location_address: null,
     distance_to_club_km: null,
+    // SDD-04: Suspension fields
+    is_suspended: false,
+    suspended_reason: null,
+    suspended_at: null,
+    suspension_expires_at: null,
     visit_count: 0,
     avg_stay_minutes: null,
     last_visited_at: null,
