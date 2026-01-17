@@ -49,6 +49,11 @@ export interface Database {
           // Admin permissions
           is_admin: boolean
           is_super_admin: boolean
+          // SDD-04: Suspension tracking
+          is_suspended: boolean
+          suspended_reason: string | null
+          suspended_at: string | null
+          suspension_expires_at: string | null
         }
         Insert: {
           id: string // UUID
@@ -82,6 +87,10 @@ export interface Database {
           push_agreed?: boolean
           is_admin?: boolean
           is_super_admin?: boolean
+          is_suspended?: boolean
+          suspended_reason?: string | null
+          suspended_at?: string | null
+          suspension_expires_at?: string | null
         }
         Update: {
           id?: string
@@ -115,6 +124,10 @@ export interface Database {
           push_agreed?: boolean
           is_admin?: boolean
           is_super_admin?: boolean
+          is_suspended?: boolean
+          suspended_reason?: string | null
+          suspended_at?: string | null
+          suspension_expires_at?: string | null
         }
       }
       weather_cache: {
@@ -235,6 +248,17 @@ export interface Database {
           payment_key: string | null
           payment_status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
           created_at: string
+          // SDD-04: Cancellation policy fields
+          status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED'
+          is_imminent_deal: boolean
+          cancelled_at: string | null
+          cancel_reason: string | null
+          refund_amount: number
+          no_show_marked_at: string | null
+          policy_version: string
+          // SDD-07: Settlement tracking
+          settlement_id: string | null // UUID referencing settlements(id)
+          paid_amount: number // Actual amount paid (for settlement calculation)
         }
         Insert: {
           id?: string // UUID
@@ -246,6 +270,15 @@ export interface Database {
           payment_key?: string | null
           payment_status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
           created_at?: string
+          status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED'
+          is_imminent_deal?: boolean
+          cancelled_at?: string | null
+          cancel_reason?: string | null
+          refund_amount?: number
+          no_show_marked_at?: string | null
+          policy_version?: string
+          settlement_id?: string | null
+          paid_amount?: number
         }
         Update: {
           id?: string
@@ -257,6 +290,145 @@ export interface Database {
           payment_key?: string | null
           payment_status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
           created_at?: string
+          status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED'
+          is_imminent_deal?: boolean
+          cancelled_at?: string | null
+          cancel_reason?: string | null
+          refund_amount?: number
+          no_show_marked_at?: string | null
+          policy_version?: string
+          settlement_id?: string | null
+          paid_amount?: number
+        }
+      }
+      settlements: {
+        Row: {
+          id: string // UUID
+          golf_club_id: number
+          period_start: string // DATE
+          period_end: string // DATE
+          gross_amount: number
+          refund_amount: number
+          net_amount: number
+          platform_fee: number
+          club_payout: number
+          reservation_count: number
+          status: 'DRAFT' | 'CONFIRMED' | 'LOCKED'
+          policy_version: string | null
+          commission_rate: number
+          include_no_show: boolean
+          include_cancelled: boolean
+          include_refunded: boolean
+          created_at: string
+          created_by_user_id: string | null
+          confirmed_at: string | null
+          confirmed_by_user_id: string | null
+          locked_at: string | null
+          locked_by_user_id: string | null
+          notes: string | null
+          metadata: Json
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          golf_club_id: number
+          period_start: string
+          period_end: string
+          gross_amount?: number
+          refund_amount?: number
+          net_amount?: number
+          platform_fee?: number
+          club_payout?: number
+          reservation_count?: number
+          status?: 'DRAFT' | 'CONFIRMED' | 'LOCKED'
+          policy_version?: string | null
+          commission_rate?: number
+          include_no_show?: boolean
+          include_cancelled?: boolean
+          include_refunded?: boolean
+          created_at?: string
+          created_by_user_id?: string | null
+          confirmed_at?: string | null
+          confirmed_by_user_id?: string | null
+          locked_at?: string | null
+          locked_by_user_id?: string | null
+          notes?: string | null
+          metadata?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          golf_club_id?: number
+          period_start?: string
+          period_end?: string
+          gross_amount?: number
+          refund_amount?: number
+          net_amount?: number
+          platform_fee?: number
+          club_payout?: number
+          reservation_count?: number
+          status?: 'DRAFT' | 'CONFIRMED' | 'LOCKED'
+          policy_version?: string | null
+          commission_rate?: number
+          include_no_show?: boolean
+          include_cancelled?: boolean
+          include_refunded?: boolean
+          created_at?: string
+          created_by_user_id?: string | null
+          confirmed_at?: string | null
+          confirmed_by_user_id?: string | null
+          locked_at?: string | null
+          locked_by_user_id?: string | null
+          notes?: string | null
+          metadata?: Json
+          updated_at?: string
+        }
+      }
+      cancellation_policies: {
+        Row: {
+          id: number
+          name: string
+          version: string
+          cancel_cutoff_hours: number
+          imminent_deal_cancellable: boolean
+          refund_rate: number
+          no_show_grace_period_minutes: number
+          no_show_suspension_enabled: boolean
+          no_show_suspension_duration_days: number | null
+          description: string | null
+          active: boolean
+          created_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          name: string
+          version?: string
+          cancel_cutoff_hours?: number
+          imminent_deal_cancellable?: boolean
+          refund_rate?: number
+          no_show_grace_period_minutes?: number
+          no_show_suspension_enabled?: boolean
+          no_show_suspension_duration_days?: number | null
+          description?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          name?: string
+          version?: string
+          cancel_cutoff_hours?: number
+          imminent_deal_cancellable?: boolean
+          refund_rate?: number
+          no_show_grace_period_minutes?: number
+          no_show_suspension_enabled?: boolean
+          no_show_suspension_duration_days?: number | null
+          description?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string | null
         }
       }
       notifications: {
