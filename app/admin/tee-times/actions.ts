@@ -1,8 +1,15 @@
+/**
+ * SDD-01/SDD-08: Tee Time Admin Server Actions
+ *
+ * Updated for SDD-08: Session-based authentication
+ */
+
 'use server';
 
 import { revalidatePath } from 'next/cache';
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
+import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 
 type TeeTime = Database['public']['Tables']['tee_times']['Row'];
 type TeeTimeInsert = Database['public']['Tables']['tee_times']['Insert'];
@@ -23,7 +30,7 @@ function getKstDayRange(date: Date) {
 }
 
 // =====================================================
-// Helper: Get current user and check permissions
+// SDD-08: Helper: Get current user and check permissions
 // =====================================================
 
 interface UserRole {
@@ -35,52 +42,18 @@ interface UserRole {
 
 async function getUserRole(): Promise<UserRole | null> {
   try {
-    // Get current session
-    const { data: { user: sessionUser } } = await supabase.auth.getUser();
-    if (!sessionUser) {
+    const user = await getCurrentUserWithRoles();
+
+    if (!user) {
       return null;
     }
 
-    // Get user details
-    const { data: dbUser, error: userError } = await (supabase as any)
-      .from('users')
-      .select('id, is_super_admin, is_admin')
-      .eq('id', sessionUser.id)
-      .single();
-
-    if (userError || !dbUser) {
-      return null;
-    }
-
-    // If super admin, return with full access
-    if (dbUser.is_super_admin) {
-      return {
-        userId: dbUser.id,
-        isSuperAdmin: true,
-        isClubAdmin: false,
-        accessibleClubIds: [], // Empty means all clubs
-      };
-    }
-
-    // If club admin, get accessible clubs
-    if (dbUser.is_admin) {
-      const { data: clubAdmins, error: clubError } = await (supabase as any)
-        .from('club_admins')
-        .select('golf_club_id')
-        .eq('user_id', dbUser.id);
-
-      if (!clubError && clubAdmins) {
-        return {
-          userId: dbUser.id,
-          isSuperAdmin: false,
-          isClubAdmin: true,
-          accessibleClubIds: clubAdmins.map((ca: any) => ca.golf_club_id),
-        };
-      }
-    }
-
-    // Regular user - no admin access
-    return null;
+    return {
+      userId: user.id,
+      isSuperAdmin: user.isSuperAdmin,
+      isClubAdmin: user.isClubAdmin,
+      accessibleClubIds: user.clubIds
+    };
   } catch (error) {
     console.error('Error getting user role:', error);
     return null;

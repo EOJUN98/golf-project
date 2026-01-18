@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin, User, LogOut } from 'lucide-react';
+import { MapPin, User, LogOut, Shield } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { logout } from '@/app/login/actions';
 
@@ -85,19 +85,35 @@ export default function SiteHeader() {
           인천 (Club 72)
         </div>
 
+        {/* SDD-09: Admin Access Button - Demo Mode */}
+        <button
+          onClick={() => router.push('/admin')}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 rounded-full hover:bg-purple-200 transition-colors text-sm font-medium border border-purple-300"
+          title="관리자 페이지 (Demo)"
+        >
+          <Shield size={14} />
+          <span className="hidden sm:inline">Admin</span>
+        </button>
+
         {/* Auth Buttons */}
         {loading ? (
           <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse"></div>
         ) : user ? (
           <div className="flex items-center gap-2">
-            {/* User Info */}
+            {/* SDD-09: MY Menu - Link to user's reservations */}
             <button
-              onClick={() => router.push('/reservations')}
-              className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-full hover:bg-green-200 transition-colors text-sm font-medium"
+              onClick={() => router.push('/my/reservations')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full hover:bg-blue-200 transition-colors text-sm font-medium"
+              title="내 예약"
             >
               <User size={16} />
-              {userName}
+              <span>MY</span>
             </button>
+
+            {/* User Info Dropdown (could be expanded to dropdown menu) */}
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+              {userName}
+            </div>
 
             {/* Logout Button */}
             <button

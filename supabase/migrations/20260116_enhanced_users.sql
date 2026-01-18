@@ -7,37 +7,32 @@
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS blacklisted BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS blacklist_reason TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS blacklisted_at TIMESTAMPTZ;
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS blacklisted_by TEXT; -- admin user_id
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS blacklisted_by TEXT;
+-- admin user_id
 
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS no_show_count INTEGER DEFAULT 0;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_no_show_at TIMESTAMPTZ;
-
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS total_bookings INTEGER DEFAULT 0;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS total_spent INTEGER DEFAULT 0;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avg_booking_value INTEGER DEFAULT 0;
-
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS location_lat DECIMAL(10, 8);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS location_lng DECIMAL(11, 8);
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS location_address TEXT;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS distance_to_club_km INTEGER;
-
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS visit_count INTEGER DEFAULT 0;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avg_stay_minutes INTEGER;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS last_visited_at TIMESTAMPTZ;
-
 -- Segment will be auto-calculated, but keep manual override option
-ALTER TABLE public.users ADD COLUMN IF NOT EXISTS segment_override_by TEXT; -- admin user_id
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS segment_override_by TEXT;
+-- admin user_id
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS segment_override_at TIMESTAMPTZ;
-
 -- Marketing preferences
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS marketing_agreed BOOLEAN DEFAULT FALSE;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS push_agreed BOOLEAN DEFAULT FALSE;
-
 -- 2. Create index for blacklist filtering
 CREATE INDEX IF NOT EXISTS idx_users_blacklisted ON public.users(blacklisted);
 CREATE INDEX IF NOT EXISTS idx_users_segment ON public.users(segment);
 CREATE INDEX IF NOT EXISTS idx_users_cherry_score ON public.users(cherry_score DESC);
-
 -- 3. Add comments for documentation
 COMMENT ON COLUMN public.users.blacklisted IS '악성 사용자 차단 여부 (노쇼 반복 등)';
 COMMENT ON COLUMN public.users.no_show_count IS '노쇼 횟수 (자동 집계)';
@@ -45,7 +40,6 @@ COMMENT ON COLUMN public.users.total_bookings IS '총 예약 횟수 (세그먼�
 COMMENT ON COLUMN public.users.total_spent IS '총 결제 금액 (원 단위)';
 COMMENT ON COLUMN public.users.cherry_score IS '체리 점수 (0-100, 높을수록 우대)';
 COMMENT ON COLUMN public.users.segment IS '사용자 세그먼트 (FUTURE/PRESTIGE/SMART/CHERRY)';
-
 -- 4. Create function to auto-update user stats after reservation
 CREATE OR REPLACE FUNCTION update_user_stats_after_reservation()
 RETURNS TRIGGER AS $$
@@ -63,7 +57,6 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- 5. Create trigger to auto-update stats
 --DROP TRIGGER IF EXISTS trigger_update_user_stats ON public.reservations;
 --CREATE TRIGGER trigger_update_user_stats
@@ -115,7 +108,6 @@ BEGIN
   RETURN new_segment;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- 7. Create function to handle no-show
 CREATE OR REPLACE FUNCTION record_no_show(reservation_id_param TEXT)
 RETURNS VOID AS $$
@@ -151,7 +143,6 @@ BEGIN
   PERFORM calculate_user_segment(user_id_val);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
 -- 8. Create view for admin dashboard
 CREATE OR REPLACE VIEW admin_user_stats AS
 SELECT
@@ -172,5 +163,4 @@ SELECT
 FROM public.users u
 LEFT JOIN public.reservations r ON r.user_id = u.id AND r.payment_status IN ('PENDING', 'PAID')
 GROUP BY u.id;
-
 COMMENT ON VIEW admin_user_stats IS '관리자 대시보드용 사용자 통계 뷰';

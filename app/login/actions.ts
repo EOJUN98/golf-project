@@ -8,7 +8,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server';
  * Server action for user login
  */
 export async function login(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
 
@@ -47,7 +47,7 @@ export async function login(formData: FormData) {
  * Server action for user signup
  */
 export async function signup(formData: FormData) {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const name = formData.get('name') as string;
@@ -99,7 +99,7 @@ export async function signup(formData: FormData) {
  * Server action for user logout
  */
 export async function logout() {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   try {
     const { error } = await supabase.auth.signOut();
 
