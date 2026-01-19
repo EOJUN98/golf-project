@@ -10,6 +10,7 @@
  */
 
 import TeeTimesClient from '@/components/teetimes/TeeTimesClient';
+import PageCanvas from '@/components/layout/PageCanvas';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,5 +84,9 @@ export default async function TeeTimesPage() {
     },
   ];
 
-  return <TeeTimesClient golfCourses={mockGolfCourses} />;
+  return (
+    <PageCanvas>
+      <TeeTimesClient golfCourses={mockGolfCourses} />
+    </PageCanvas>
+  );
 }

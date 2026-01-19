@@ -15,6 +15,7 @@
  */
 
 import GolfCourseDetailClient from '@/components/teetimes/GolfCourseDetailClient';
+import PageCanvas from '@/components/layout/PageCanvas';
 
 export const dynamic = 'force-dynamic';
 
@@ -99,5 +100,9 @@ export default async function GolfCourseDetailPage({ params }: PageProps) {
     ],
   };
 
-  return <GolfCourseDetailClient course={mockCourseDetail} />;
+  return (
+    <PageCanvas>
+      <GolfCourseDetailClient course={mockCourseDetail} />
+    </PageCanvas>
+  );
 }

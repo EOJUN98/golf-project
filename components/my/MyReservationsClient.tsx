@@ -31,7 +31,7 @@ interface Reservation {
   discount_breakdown: any;
   payment_key: string | null;
   payment_status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED';
-  status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED';
+  status: 'PENDING' | 'PAID' | 'CONFIRMED' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED';
   is_imminent_deal: boolean;
   cancelled_at: string | null;
   cancel_reason: string | null;
@@ -71,6 +71,7 @@ export default function MyReservationsClient({ user, reservations }: MyReservati
   const getStatusBadge = (status: Reservation['status']) => {
     switch (status) {
       case 'PAID':
+      case 'CONFIRMED':
         return (
           <span className="flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full bg-green-100 text-green-700">
             <CheckCircle size={14} />
@@ -118,7 +119,7 @@ export default function MyReservationsClient({ user, reservations }: MyReservati
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50 max-w-md mx-auto shadow-2xl">
+    <div className="flex flex-col flex-1 overflow-y-auto pb-20">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10">
         <div className="flex items-center justify-between">
@@ -209,7 +210,11 @@ export default function MyReservationsClient({ user, reservations }: MyReservati
                     // Navigate based on status
                     if (res.status === 'COMPLETED') {
                       router.push(`/my/reservations/${res.id}/review`);
-                    } else if (res.status === 'PAID' || res.status === 'PENDING') {
+                    } else if (
+                      res.status === 'PAID' ||
+                      res.status === 'CONFIRMED' ||
+                      res.status === 'PENDING'
+                    ) {
                       router.push(`/my/reservations/${res.id}`);
                     }
                   }}
@@ -311,8 +316,6 @@ export default function MyReservationsClient({ user, reservations }: MyReservati
         )}
       </main>
 
-      {/* Bottom Navigation Spacer */}
-      <div className="h-20"></div>
     </div>
   );
 }

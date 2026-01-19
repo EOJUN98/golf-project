@@ -2,6 +2,7 @@ import { Home, Ticket, User, Menu } from 'lucide-react';
 import { getTeeTimesByDate } from '@/utils/supabase/queries';
 import TeeTimeList from '@/components/TeeTimeList';
 import SiteHeader from '@/components/SiteHeader';
+import PageCanvas from '@/components/layout/PageCanvas';
 
 export const dynamic = 'force-dynamic'; // Ensure fresh data on every request
 
@@ -67,7 +68,7 @@ export default async function MainPage({ searchParams }: { searchParams: Promise
   const dateForClient = selectedDate.toISOString().slice(0, 10);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 max-w-md mx-auto shadow-2xl overflow-hidden relative">
+    <PageCanvas>
       <SiteHeader />
 
       <div className="flex-1 overflow-y-auto pb-24">
@@ -86,6 +87,6 @@ export default async function MainPage({ searchParams }: { searchParams: Promise
         <button className="flex flex-col items-center hover:text-black"><User size={24} className="mb-1" />MY</button>
         <button className="flex flex-col items-center hover:text-black"><Menu size={24} className="mb-1" />메뉴</button>
       </nav>
-    </div>
+    </PageCanvas>
   );
 }

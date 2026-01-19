@@ -10,6 +10,7 @@
  */
 
 import MyPageTabs from '@/components/my/MyPageTabs';
+import PageCanvas from '@/components/layout/PageCanvas';
 
 export const dynamic = 'force-dynamic';
 
@@ -181,13 +182,15 @@ export default async function MyPage() {
   ];
 
   return (
-    <MyPageTabs
-      user={mockUser as any}
-      userStats={mockUserStats}
-      membership={mockMembership}
-      paymentMethods={mockPaymentMethods}
-      gifts={mockGifts}
-      rounds={mockRounds}
-    />
+    <PageCanvas>
+      <MyPageTabs
+        user={mockUser as any}
+        userStats={mockUserStats}
+        membership={mockMembership}
+        paymentMethods={mockPaymentMethods}
+        gifts={mockGifts}
+        rounds={mockRounds}
+      />
+    </PageCanvas>
   );
 }

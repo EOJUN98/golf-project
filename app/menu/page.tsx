@@ -14,6 +14,7 @@
  */
 
 import MenuClient from '@/components/menu/MenuClient';
+import PageCanvas from '@/components/layout/PageCanvas';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,5 +27,9 @@ export default async function MenuPage() {
     phone: '010-1234-5678',
   };
 
-  return <MenuClient user={mockUser} />;
+  return (
+    <PageCanvas>
+      <MenuClient user={mockUser} />
+    </PageCanvas>
+  );
 }

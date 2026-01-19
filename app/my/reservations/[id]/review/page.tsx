@@ -1,19 +1,11 @@
 /**
- * Round Review Page
- *
- * Create review and round record after completing a round
- * Includes:
- * - Total score
- * - Hole-by-hole scores
- * - Putts per hole
- * - Caddy evaluation
- * - Course evaluation
- * - Course issue reporting (complaints)
+ * Reservation Review Page (Completed)
  *
  * **MOCK DATA MODE**: Uses fake data
  */
 
-import RoundReviewClient from '@/components/my/RoundReviewClient';
+import PageCanvas from '@/components/layout/PageCanvas';
+import ReservationReviewClient from '@/components/my/ReservationReviewClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,24 +13,19 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function RoundReviewPage({ params }: PageProps) {
+export default async function ReservationReviewPage({ params }: PageProps) {
   const { id } = await params;
 
-  // Mock reservation data
   const mockReservation = {
-    id: parseInt(id),
-    tee_time_id: 101,
-    status: 'COMPLETED',
-    tee_times: {
-      id: 101,
-      tee_off: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      golf_clubs: {
-        id: 1,
-        name: '인천 클럽72',
-        location_name: '인천 서구',
-      },
-    },
+    id,
+    course_name: '서울컨트리클럽',
+    location_name: '서울 강남구',
+    tee_off: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
   };
 
-  return <RoundReviewClient reservation={mockReservation as any} />;
+  return (
+    <PageCanvas>
+      <ReservationReviewClient reservation={mockReservation} />
+    </PageCanvas>
+  );
 }

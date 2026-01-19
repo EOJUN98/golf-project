@@ -6,6 +6,7 @@
  */
 
 import MyReservationsClient from '@/components/my/MyReservationsClient';
+import PageCanvas from '@/components/layout/PageCanvas';
 
 export const dynamic = 'force-dynamic';
 
@@ -165,9 +166,11 @@ export default async function MyReservationsPage() {
   ];
 
   return (
-    <MyReservationsClient
-      user={mockUser as any}
-      reservations={mockReservations as any}
-    />
+    <PageCanvas>
+      <MyReservationsClient
+        user={mockUser as any}
+        reservations={mockReservations as any}
+      />
+    </PageCanvas>
   );
 }

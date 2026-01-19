@@ -31,7 +31,7 @@ export default function TeeTimesClient({ golfCourses }: TeeTimesClientProps) {
   const router = useRouter();
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="flex-1 overflow-y-auto pb-20">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 p-4">
         <h1 className="text-2xl font-black text-gray-900">티타임</h1>
@@ -99,12 +99,17 @@ export default function TeeTimesClient({ golfCourses }: TeeTimesClientProps) {
 
             {/* Price and CTA */}
             <div className="flex items-center justify-between pt-3 border-t border-gray-200">
-              <div>
-                <p className="text-xs text-gray-600">최저가</p>
-                <p className="text-xl font-black text-green-600">
+              <button
+                type="button"
+                onClick={() => router.push(`/teetimes/${course.id}`)}
+                className="text-left"
+                aria-label={`${course.name} 최저가 상세 보기`}
+              >
+                <p className="text-xs text-gray-600">현재 최저가</p>
+                <p className="text-xl font-black text-green-600 underline decoration-green-300 decoration-2 underline-offset-4">
                   {course.lowest_price.toLocaleString()}원
                 </p>
-              </div>
+              </button>
               <button
                 onClick={() => router.push(`/teetimes/${course.id}`)}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 transition-colors flex items-center gap-1"

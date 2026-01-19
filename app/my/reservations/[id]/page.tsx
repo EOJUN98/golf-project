@@ -1,11 +1,12 @@
 /**
- * Reservation Detail Page
+ * Reservation Detail Page (Paid/Pending)
  *
- * Shows complete reservation information with mock data
- * **MOCK DATA MODE**: Uses fake data instead of Supabase
+ * Shows full golf course details for the booked tee time.
+ * **MOCK DATA MODE**: Uses fake data
  */
 
-import ReservationDetailClient from '@/components/my/ReservationDetailClient';
+import PageCanvas from '@/components/layout/PageCanvas';
+import GolfCourseDetailClient from '@/components/teetimes/GolfCourseDetailClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,99 +17,70 @@ interface PageProps {
 export default async function ReservationDetailPage({ params }: PageProps) {
   const { id } = await params;
 
-  // Mock user
-  const mockUser = {
-    id: 'mock-user-1',
-    email: 'demo@tugol.dev',
-    name: '김골프',
-    roles: ['user'],
-  };
-
-  // Mock reservation data based on ID
-  const mockReservation = {
-    id: parseInt(id),
-    user_id: 'mock-user-1',
-    tee_time_id: 101,
-    base_price: 180000,
-    final_price: 144000,
-    discount_breakdown: {
-      weather: 10,
-      time: 5,
-      lbs: 0,
-      segment: 5,
-      total: 20,
-    },
-    payment_status: 'PAID',
-    status: 'CONFIRMED',
-    created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    tee_times: {
-      id: 101,
-      tee_off: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      base_price: 180000,
-      status: 'BOOKED',
-      golf_club_id: 1,
-      golf_clubs: {
-        id: 1,
-        name: '인천 클럽72',
-        location_name: '인천 서구',
-        location_lat: 37.4563,
-        location_lng: 126.6345,
-      },
-    },
-  };
-
-  // Mock course details
-  const mockCourseDetails = {
-    id: 1,
-    golf_club_id: 1,
-    course_name: '인천 클럽72 메인 코스',
+  const mockCourseDetail = {
+    id: parseInt(id, 10),
+    name: '인천 클럽72',
+    location_name: '인천 서구',
+    latitude: 37.4563,
+    longitude: 126.6345,
+    description:
+      '도심에서 가까운 명품 골프장으로, 뛰어난 코스 관리와 편리한 시설로 골퍼들에게 인기가 높습니다.',
+    avg_rating: 4.5,
+    total_reviews: 1250,
+    facilities: ['레스토랑', '프로샵', '사우나', '연습장', '락커룸', '캐디'],
     total_length: 6842,
     par: 72,
     green_speed: 10.5,
     green_type: 'Bent Grass',
     slope_rating: 128,
     course_rating: 72.5,
-    course_map_url: null,
+    holes: 18,
+    course_map_url: '/images/course-map-placeholder.png',
     hole_details: [
       { hole: 1, par: 4, length: 385, handicap: 7 },
       { hole: 2, par: 3, length: 165, handicap: 15 },
       { hole: 3, par: 5, length: 520, handicap: 3 },
       { hole: 4, par: 4, length: 410, handicap: 5 },
     ],
-  };
-
-  // Mock course notices
-  const mockNotices = [
-    {
-      id: 1,
-      golf_club_id: 1,
-      notice_type: 'MAINTENANCE',
-      severity: 'INFO',
-      title: '7번 홀 그린 보수 작업',
-      description: '7번 홀 그린 일부 구역 보수 중입니다. 임시 그린을 사용하세요.',
-      valid_from: new Date().toISOString(),
-      valid_until: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      is_active: true,
+    strategy_tips: [
+      '드라이버 샷은 페어웨이 중앙을 노리세요',
+      '그린 주변 벙커가 많으니 주의하세요',
+      '바람이 강한 날에는 클럽 선택에 신중하세요',
+      '파5 홀에서는 2온을 노릴 수 있습니다',
+    ],
+    weather: {
+      temperature: 22,
+      condition: '맑음',
+      wind_speed: 5,
+      wind_direction: '서풍',
+      rain_probability: 10,
+      rainfall: 0,
     },
-  ];
-
-  // Mock weather forecast
-  const mockWeather = {
-    temperature: 22,
-    weather_condition: '맑음',
-    wind_speed: 5,
-    wind_direction: '서풍',
-    rain_probability: 10,
-    rainfall_amount: 0,
+    notices: [
+      {
+        id: 1,
+        notice_type: 'MAINTENANCE',
+        severity: 'INFO',
+        title: '7번 홀 그린 보수 작업',
+        description: '7번 홀 그린 일부 구역 보수 중입니다. 임시 그린을 사용하세요.',
+        start_date: new Date().toISOString(),
+        end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 2,
+        notice_type: 'TOURNAMENT',
+        severity: 'WARNING',
+        title: '주말 프로 대회 진행',
+        description: '이번 주말 프로 대회가 진행됩니다. 일부 시간대 예약 제한이 있습니다.',
+        start_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
+        end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ],
   };
 
   return (
-    <ReservationDetailClient
-      user={mockUser as any}
-      reservation={mockReservation as any}
-      course={mockCourseDetails as any}
-      notices={mockNotices}
-      weather={mockWeather}
-    />
+    <PageCanvas>
+      <GolfCourseDetailClient course={mockCourseDetail} />
+    </PageCanvas>
   );
 }
