@@ -129,6 +129,7 @@ export interface Database {
           suspended_at?: string | null
           suspension_expires_at?: string | null
         }
+        Relationships: []
       }
       weather_cache: {
         Row: {
@@ -155,6 +156,7 @@ export interface Database {
           rn1?: number
           wsd?: number
         }
+        Relationships: []
       }
       tee_times: {
         Row: {
@@ -193,6 +195,7 @@ export interface Database {
           updated_by?: string | null
           updated_at?: string | null
         }
+        Relationships: []
       }
       club_admins: {
         Row: {
@@ -213,6 +216,7 @@ export interface Database {
           golf_club_id?: number
           created_at?: string
         }
+        Relationships: []
       }
       golf_clubs: {
         Row: {
@@ -236,6 +240,7 @@ export interface Database {
           location_lat?: number | null
           location_lng?: number | null
         }
+        Relationships: []
       }
       reservations: {
         Row: {
@@ -300,6 +305,7 @@ export interface Database {
           settlement_id?: string | null
           paid_amount?: number
         }
+        Relationships: []
       }
       settlements: {
         Row: {
@@ -383,6 +389,7 @@ export interface Database {
           metadata?: Json
           updated_at?: string
         }
+        Relationships: []
       }
       cancellation_policies: {
         Row: {
@@ -430,6 +437,7 @@ export interface Database {
           created_at?: string
           updated_at?: string | null
         }
+        Relationships: []
       }
       notifications: {
         Row: {
@@ -477,8 +485,11 @@ export interface Database {
           priority?: number
           expires_at?: string | null
         }
+        Relationships: []
       }
     }
+    Views: {}
+    Functions: {}
     Enums: {
       segment_type: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
       teetime_status: 'OPEN' | 'BOOKED' | 'BLOCKED'
@@ -486,5 +497,6 @@ export interface Database {
       notification_type: 'PANIC_DEAL' | 'WEATHER_ALERT' | 'BOOKING_CONFIRMATION' | 'BOOKING_REMINDER' | 'PRICE_DROP' | 'CUSTOM'
       notification_status: 'PENDING' | 'SENT' | 'FAILED' | 'READ' | 'DISMISSED'
     }
+    CompositeTypes: {}
   }
 }
