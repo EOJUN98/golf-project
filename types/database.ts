@@ -16,6 +16,9 @@ export interface Database {
           name: string | null
           phone: string | null
           segment: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          segment_type: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          segment_score: number
+          segment_calculated_at: string | null
           cherry_score: number
           terms_agreed_at: string | null
           created_at: string
@@ -27,7 +30,11 @@ export interface Database {
           blacklisted_by: string | null
           // Behavior tracking
           no_show_count: number
+          no_show_risk_score: number
+          consecutive_no_shows: number
           last_no_show_at: string | null
+          total_cancellations: number
+          cancellation_rate: number
           total_bookings: number
           total_spent: number
           avg_booking_value: number
@@ -43,6 +50,7 @@ export interface Database {
           // Segment override
           segment_override_by: string | null
           segment_override_at: string | null
+          segment_override_reason: string | null
           // Marketing
           marketing_agreed: boolean
           push_agreed: boolean
@@ -61,6 +69,9 @@ export interface Database {
           name?: string | null
           phone?: string | null
           segment?: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          segment_type?: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          segment_score?: number
+          segment_calculated_at?: string | null
           cherry_score?: number
           terms_agreed_at?: string | null
           created_at?: string
@@ -70,7 +81,11 @@ export interface Database {
           blacklisted_at?: string | null
           blacklisted_by?: string | null
           no_show_count?: number
+          no_show_risk_score?: number
+          consecutive_no_shows?: number
           last_no_show_at?: string | null
+          total_cancellations?: number
+          cancellation_rate?: number
           total_bookings?: number
           total_spent?: number
           avg_booking_value?: number
@@ -83,6 +98,7 @@ export interface Database {
           last_visited_at?: string | null
           segment_override_by?: string | null
           segment_override_at?: string | null
+          segment_override_reason?: string | null
           marketing_agreed?: boolean
           push_agreed?: boolean
           is_admin?: boolean
@@ -98,6 +114,9 @@ export interface Database {
           name?: string | null
           phone?: string | null
           segment?: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          segment_type?: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
+          segment_score?: number
+          segment_calculated_at?: string | null
           cherry_score?: number
           terms_agreed_at?: string | null
           created_at?: string
@@ -107,7 +126,11 @@ export interface Database {
           blacklisted_at?: string | null
           blacklisted_by?: string | null
           no_show_count?: number
+          no_show_risk_score?: number
+          consecutive_no_shows?: number
           last_no_show_at?: string | null
+          total_cancellations?: number
+          cancellation_rate?: number
           total_bookings?: number
           total_spent?: number
           avg_booking_value?: number
@@ -120,6 +143,7 @@ export interface Database {
           last_visited_at?: string | null
           segment_override_by?: string | null
           segment_override_at?: string | null
+          segment_override_reason?: string | null
           marketing_agreed?: boolean
           push_agreed?: boolean
           is_admin?: boolean
@@ -197,6 +221,75 @@ export interface Database {
         }
         Relationships: []
       }
+      tee_time_stats: {
+        Row: {
+          id: number
+          tee_time_id: number
+          golf_club_id: number
+          day_of_week: number
+          hour_of_day: number
+          is_weekend: boolean
+          is_holiday: boolean
+          total_views: number
+          total_bookings: number
+          total_cancellations: number
+          total_no_shows: number
+          avg_final_price: number | null
+          avg_discount_rate: number | null
+          base_price: number | null
+          booking_rate: number
+          vacancy_rate: number
+          no_show_rate: number
+          calculated_at: string
+          stats_period_start: string | null
+          stats_period_end: string | null
+        }
+        Insert: {
+          id?: number
+          tee_time_id: number
+          golf_club_id: number
+          day_of_week: number
+          hour_of_day: number
+          is_weekend?: boolean
+          is_holiday?: boolean
+          total_views?: number
+          total_bookings?: number
+          total_cancellations?: number
+          total_no_shows?: number
+          avg_final_price?: number | null
+          avg_discount_rate?: number | null
+          base_price?: number | null
+          booking_rate?: number
+          vacancy_rate?: number
+          no_show_rate?: number
+          calculated_at?: string
+          stats_period_start?: string | null
+          stats_period_end?: string | null
+        }
+        Update: {
+          id?: number
+          tee_time_id?: number
+          golf_club_id?: number
+          day_of_week?: number
+          hour_of_day?: number
+          is_weekend?: boolean
+          is_holiday?: boolean
+          total_views?: number
+          total_bookings?: number
+          total_cancellations?: number
+          total_no_shows?: number
+          avg_final_price?: number | null
+          avg_discount_rate?: number | null
+          base_price?: number | null
+          booking_rate?: number
+          vacancy_rate?: number
+          no_show_rate?: number
+          calculated_at?: string
+          stats_period_start?: string | null
+          stats_period_end?: string | null
+        }
+        Relationships: []
+      }
       club_admins: {
         Row: {
           id: number
@@ -252,6 +345,16 @@ export interface Database {
           discount_breakdown: Json | null
           payment_key: string | null
           payment_status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+          payment_mode: 'REAL' | 'VIRTUAL' | 'TEST'
+          payment_reference: string | null
+          payment_metadata: Json | null
+          risk_score: number
+          risk_factors: Json | null
+          precheck_required: boolean
+          precheck_completed_at: string | null
+          precheck_method: string | null
+          penalty_agreement_signed: boolean
+          penalty_agreement_signed_at: string | null
           created_at: string
           // SDD-04: Cancellation policy fields
           status: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED'
@@ -274,6 +377,16 @@ export interface Database {
           discount_breakdown?: Json | null
           payment_key?: string | null
           payment_status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+          payment_mode?: 'REAL' | 'VIRTUAL' | 'TEST'
+          payment_reference?: string | null
+          payment_metadata?: Json | null
+          risk_score?: number
+          risk_factors?: Json | null
+          precheck_required?: boolean
+          precheck_completed_at?: string | null
+          precheck_method?: string | null
+          penalty_agreement_signed?: boolean
+          penalty_agreement_signed_at?: string | null
           created_at?: string
           status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED'
           is_imminent_deal?: boolean
@@ -294,6 +407,16 @@ export interface Database {
           discount_breakdown?: Json | null
           payment_key?: string | null
           payment_status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED'
+          payment_mode?: 'REAL' | 'VIRTUAL' | 'TEST'
+          payment_reference?: string | null
+          payment_metadata?: Json | null
+          risk_score?: number
+          risk_factors?: Json | null
+          precheck_required?: boolean
+          precheck_completed_at?: string | null
+          precheck_method?: string | null
+          penalty_agreement_signed?: boolean
+          penalty_agreement_signed_at?: string | null
           created_at?: string
           status?: 'PENDING' | 'PAID' | 'CANCELLED' | 'REFUNDED' | 'NO_SHOW' | 'COMPLETED'
           is_imminent_deal?: boolean
@@ -489,7 +612,27 @@ export interface Database {
       }
     }
     Views: {}
-    Functions: {}
+    Functions: {
+      calculate_segment_score: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: {
+          segment_type: string | null
+          segment_score: number | null
+          calculation_details: Json | null
+          old_segment?: string | null
+          new_segment?: string | null
+        }[]
+      }
+      increment_user_stats: {
+        Args: {
+          p_user_id: string
+          p_booking_amount: number
+        }
+        Returns: undefined
+      }
+    }
     Enums: {
       segment_type: 'FUTURE' | 'PRESTIGE' | 'SMART' | 'CHERRY'
       teetime_status: 'OPEN' | 'BOOKED' | 'BLOCKED'
