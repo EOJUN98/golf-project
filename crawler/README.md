@@ -65,3 +65,16 @@ npm run crawl -- --window=WEEK_BEFORE
 - `npm run crawl:teeup:discover`
 
 즉, 앱 코드와 크롤러 실행/의존성은 분리되어 관리됩니다.
+
+## 자동 실행 (GitHub Actions)
+워크플로우 파일: `.github/workflows/crawler-ingest.yml`
+
+필수 Repository Secrets:
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+동작:
+- 매시 13분(UTC) 자동 실행
+- `target:seed`로 타깃 보정 후 크롤링
+- 00:13 UTC에는 `teeup:discover`도 함께 실행
+- 수동 실행(`workflow_dispatch`)에서 단일 윈도우 실행 가능

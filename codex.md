@@ -344,3 +344,30 @@
 - 검증:
   - `npm --prefix crawler run check` 통과
   - discovery 실행 80/200/500 범위 모두 통과
+
+### 2026-02-12 16차 기록 (13:40 KST, Supabase 자동 적재 파이프라인)
+- 작업:
+  - Supabase로 크롤링 데이터가 자동 적재되도록 GitHub Actions 스케줄러 구성
+  - 크롤러 자동운영 문서 업데이트
+- 변경 파일:
+  - `.github/workflows/crawler-ingest.yml`
+  - `crawler/README.md`
+- 핵심 결과:
+  - 스케줄 자동 실행: 매시 13분(UTC)
+  - 실행 순서:
+    1) `target:seed` (타깃 보정)
+    2) (00:13 UTC) `teeup:discover` 자동 실행
+    3) 4개 윈도우 크롤링 실행
+       - `WEEK_BEFORE`
+       - `TWO_DAYS_BEFORE`
+       - `SAME_DAY_MORNING`
+       - `IMMINENT_3H`
+  - 수동 실행(`workflow_dispatch`) 지원:
+    - 전체/단일 윈도우 실행
+    - discovery 실행 여부 선택
+- 필수 GitHub Secrets:
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+- MCP 확인:
+  - `external_price_targets` 5건 활성 상태 확인
+  - `external_price_snapshots` 현재 0건 확인(스케줄 실행 후 증가 예정)

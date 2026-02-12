@@ -1,0 +1,104 @@
+name: Crawler Ingest
+
+on:
+  schedule:
+    # Every hour at minute 13 (UTC)
+    - cron: '13 * * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'ALL'
+        type: choice
+        options:
+          - ALL
+          - WEEK_BEFORE
+          - TWO_DAYS_BEFORE
+          - SAME_DAY_MORNING
+          - IMMINENT_3H
+      run_discovery:
+        description: 'Run teeup club discovery before crawl'
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: crawler-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: crawler/package-lock.json
+
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('crawler/package-lock.json') }}
+
+      - name: Install crawler dependencies
+        run: npm --prefix crawler ci
+
+      - name: Install Chromium
+        run: npm --prefix crawler run install:browser
+
+      - name: Check crawler scripts
+        run: npm --prefix crawler run check
+
+      - name: Write crawler env
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "Missing required secrets: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+          cat > crawler/.env.local <<EOF
+          NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+          SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
+          EOF
+
+      - name: Seed default targets
+        run: npm --prefix crawler run target:seed
+
+      - name: Teeup discovery (daily at 00:13 UTC on schedule)
+        if: github.event_name == 'schedule'
+        run: |
+          HOUR_UTC="$(date -u +%H)"
+          if [ "$HOUR_UTC" = "00" ]; then
+            npm --prefix crawler run teeup:discover -- --from=1 --to=500 --concurrency=10 --write-site=teeupnjoy
+          else
+            echo "Skipping discovery. Current UTC hour: $HOUR_UTC"
+          fi
+
+      - name: Teeup discovery (manual)
+        if: github.event_name == 'workflow_dispatch' && (inputs.run_discovery == true || inputs.run_discovery == 'true')
+        run: npm --prefix crawler run teeup:discover -- --from=1 --to=500 --concurrency=10 --write-site=teeupnjoy
+
+      - name: Crawl all windows
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'ALL')
+        run: |
+          for WINDOW in WEEK_BEFORE TWO_DAYS_BEFORE SAME_DAY_MORNING IMMINENT_3H; do
+            echo "Running window: $WINDOW"
+            npm --prefix crawler run crawl -- --window=$WINDOW
+          done
+
+      - name: Crawl single window
+        if: github.event_name == 'workflow_dispatch' && inputs.mode != 'ALL'
+        run: npm --prefix crawler run crawl -- --window=${{ inputs.mode }}
