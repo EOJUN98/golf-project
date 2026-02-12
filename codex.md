@@ -397,3 +397,14 @@
 - 검증:
   - `npm --prefix crawler run check` 통과
   - 로컬 `crawl:health` 실행 시 서비스키 미설정 가드로 정상 실패
+
+### 2026-02-12 18차 기록 (14:05 KST, 자동 적재 주기 조정)
+- 작업:
+  - GitHub Actions 크롤링 스케줄을 1시간 주기에서 4시간 주기로 변경
+- 변경 파일:
+  - `.github/workflows/crawler-ingest.yml`
+- 변경 내용:
+  - cron: `13 * * * *` -> `13 */4 * * *` (UTC 기준)
+- 효과:
+  - 스냅샷 적재량 증가 속도 완화
+  - 운영비/로그량 절감

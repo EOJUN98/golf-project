@@ -2,8 +2,8 @@ name: Crawler Ingest
 
 on:
   schedule:
-    # Every hour at minute 13 (UTC)
-    - cron: '13 * * * *'
+    # Every 4 hours at minute 13 (UTC)
+    - cron: '13 */4 * * *'
   workflow_dispatch:
     inputs:
       mode:
