@@ -432,3 +432,30 @@
 - 검증:
   - `npm run lint` 통과
   - `npm run build` 통과 (`/admin/crawler` 라우트 생성 확인)
+
+### 2026-02-12 20차 기록 (14:35 KST, 슈퍼어드민 접근제한 + 수동 지역 매핑)
+- 작업:
+  - `크롤링 모니터`를 슈퍼어드민 전용 메뉴/페이지로 제한
+  - 골프장 수동 지역 매핑 테이블 도입 및 페이지 연동
+- 변경 파일:
+  - `components/admin/AdminLayoutClient.tsx`
+  - `app/admin/crawler/page.tsx`
+  - `supabase/migrations/20260212_external_course_regions.sql`
+  - `crawler/docs/monitoring-sql.md`
+- 핵심 결과:
+  - 사이드바 메뉴 `크롤링 모니터`는 `user.isSuperAdmin`일 때만 노출
+  - `/admin/crawler` 페이지 진입 시 `requireSuperAdminAccess()` 강제
+    - 비로그인: `/login?redirect=/admin/crawler`
+    - 권한없음: `/forbidden`
+  - 수동 매핑 테이블 `external_course_regions` 신설:
+    - 컬럼: `course_name`, `course_name_normalized`, `region`, `note`, `active` 등
+    - `region` 허용값: `충청/수도권/강원/경상/전라/제주`
+  - 페이지 집계 로직 변경:
+    - 먼저 `external_course_regions` 매핑 적용
+    - 없으면 기존 키워드 기반 자동 분류 fallback
+- 원격 반영(MCP):
+  - migration `external_course_regions` 적용 성공
+  - `public.external_course_regions` 테이블 생성 확인
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과

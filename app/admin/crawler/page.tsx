@@ -1,5 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
+import { redirect } from 'next/navigation';
 import CrawlerMonitorClient from '@/components/admin/CrawlerMonitorClient';
+import { requireSuperAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +25,13 @@ interface SnapshotRow {
   crawl_status: string | null;
   crawled_at: string;
   error_message: string | null;
+}
+
+interface RegionMappingRow {
+  course_name: string;
+  course_name_normalized: string;
+  region: RegionKey;
+  active: boolean;
 }
 
 interface WindowStats {
@@ -78,6 +87,13 @@ function inferRegionFromCourseName(courseName: string): RegionKey {
   return '수도권';
 }
 
+function normalizeCourseName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+/g, '')
+    .replace(/[()_\-]/g, '');
+}
+
 function toNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const num = Number(value);
@@ -86,7 +102,8 @@ function toNumber(value: unknown): number | null {
 
 function aggregateCourseSummaries(
   targets: TargetRow[],
-  snapshots: SnapshotRow[]
+  snapshots: SnapshotRow[],
+  manualRegionMap: Map<string, RegionKey>
 ): { grouped: Record<RegionKey, CourseSummary[]>; totalCourses: number; totalSnapshots: number } {
   const map = new Map<string, CourseSummary>();
 
@@ -95,9 +112,11 @@ function aggregateCourseSummaries(
     if (!courseName || courseName === '*') return null;
 
     if (!map.has(courseName)) {
+      const normalized = normalizeCourseName(courseName);
+      const region = manualRegionMap.get(normalized) || inferRegionFromCourseName(courseName);
       map.set(courseName, {
         courseName,
-        region: inferRegionFromCourseName(courseName),
+        region,
         sites: siteCodeRaw ? [siteCodeRaw] : [],
         latestCrawledAt: null,
         latestStatus: null,
@@ -216,6 +235,15 @@ function aggregateCourseSummaries(
 }
 
 export default async function AdminCrawlerPage() {
+  try {
+    await requireSuperAdminAccess();
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      redirect('/login?redirect=/admin/crawler');
+    }
+    redirect('/forbidden');
+  }
+
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -226,9 +254,14 @@ export default async function AdminCrawlerPage() {
   let loadError: string | null = null;
   let targets: TargetRow[] = [];
   let snapshots: SnapshotRow[] = [];
+  const manualRegionMap = new Map<string, RegionKey>();
 
   try {
-    const [{ data: targetData, error: targetError }, { data: snapshotData, error: snapshotError }] = await Promise.all([
+    const [
+      { data: targetData, error: targetError },
+      { data: snapshotData, error: snapshotError },
+      { data: mappingData, error: mappingError },
+    ] = await Promise.all([
       supabase
         .from('external_price_targets')
         .select('id, site_code, course_name, active')
@@ -239,6 +272,10 @@ export default async function AdminCrawlerPage() {
         .gte('crawled_at', sinceIso)
         .order('crawled_at', { ascending: false })
         .limit(10000),
+      supabase
+        .from('external_course_regions')
+        .select('course_name, course_name_normalized, region, active')
+        .eq('active', true),
     ]);
 
     if (targetError) {
@@ -247,17 +284,26 @@ export default async function AdminCrawlerPage() {
     if (snapshotError) {
       throw new Error(snapshotError.message);
     }
+    if (mappingError) {
+      throw new Error(mappingError.message);
+    }
 
     targets = (targetData || []) as TargetRow[];
     snapshots = ((snapshotData || []) as SnapshotRow[]).map((row) => ({
       ...row,
       final_price: toNumber(row.final_price),
     }));
+
+    const mappings = (mappingData || []) as RegionMappingRow[];
+    for (const mapping of mappings) {
+      const normalized = mapping.course_name_normalized || normalizeCourseName(mapping.course_name);
+      manualRegionMap.set(normalized, mapping.region);
+    }
   } catch (error) {
     loadError = error instanceof Error ? error.message : '데이터 조회 중 오류가 발생했습니다.';
   }
 
-  const aggregated = aggregateCourseSummaries(targets, snapshots);
+  const aggregated = aggregateCourseSummaries(targets, snapshots, manualRegionMap);
 
   return (
     <CrawlerMonitorClient

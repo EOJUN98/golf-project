@@ -117,13 +117,15 @@ export default function AdminLayoutClient({ children, user }: AdminLayoutClientP
               <span className="font-medium">정산 관리</span>
             </Link>
 
-            <Link
-              href="/admin/crawler"
-              className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
-            >
-              <Activity size={20} />
-              <span className="font-medium">크롤링 모니터</span>
-            </Link>
+            {user.isSuperAdmin && (
+              <Link
+                href="/admin/crawler"
+                className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
+              >
+                <Activity size={20} />
+                <span className="font-medium">크롤링 모니터</span>
+              </Link>
+            )}
 
             <Link
               href="/admin/settings"

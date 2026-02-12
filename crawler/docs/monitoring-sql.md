@@ -62,3 +62,35 @@ group by error_message
 order by error_count desc, last_seen desc
 limit 20;
 ```
+
+## 5) 골프장 수동 지역 매핑 입력/수정
+```sql
+insert into public.external_course_regions (
+  course_name,
+  course_name_normalized,
+  region,
+  note,
+  active
+)
+values (
+  '클럽72',
+  '클럽72',
+  '수도권',
+  '운영자 수동 지정',
+  true
+)
+on conflict (course_name_normalized)
+do update set
+  course_name = excluded.course_name,
+  region = excluded.region,
+  note = excluded.note,
+  active = excluded.active,
+  updated_at = now();
+```
+
+매핑 조회:
+```sql
+select id, course_name, course_name_normalized, region, active, updated_at
+from public.external_course_regions
+order by updated_at desc, id desc;
+```
