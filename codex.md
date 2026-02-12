@@ -459,3 +459,25 @@
 - 검증:
   - `npm run lint` 통과
   - `npm run build` 통과
+
+### 2026-02-12 21차 기록 (14:48 KST, 지역 매핑 관리 UI/API)
+- 작업:
+  - 크롤링 모니터 화면에서 지역 수동 매핑을 직접 저장/해제할 수 있도록 기능 추가
+  - 슈퍼어드민 전용 지역 매핑 API 추가
+- 변경 파일:
+  - `app/api/admin/crawler/regions/route.ts`
+  - `components/admin/CrawlerMonitorClient.tsx`
+  - `app/admin/crawler/page.tsx`
+- 핵심 결과:
+  - `/api/admin/crawler/regions`
+    - `POST`: `courseName`, `region` 기반 upsert (수퍼어드민만 허용)
+    - `DELETE`: 해당 골프장 매핑 `active=false` 처리 (자동분류 복귀)
+  - UI 기능:
+    - 선택된 골프장에 대해 지역 드롭다운/저장/해제 버튼 제공
+    - 현재 분류 출처 배지 표시(`수동 매핑`/`자동 분류`)
+    - 저장/해제 후 `router.refresh()`로 즉시 반영
+  - 페이지 집계 데이터에 `regionSource` 필드 추가
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과
+  - `api/admin/crawler/regions` 라우트 생성 확인

@@ -43,6 +43,7 @@ interface WindowStats {
 interface CourseSummary {
   courseName: string;
   region: RegionKey;
+  regionSource: 'MANUAL' | 'AUTO';
   sites: string[];
   latestCrawledAt: string | null;
   latestStatus: string | null;
@@ -114,9 +115,11 @@ function aggregateCourseSummaries(
     if (!map.has(courseName)) {
       const normalized = normalizeCourseName(courseName);
       const region = manualRegionMap.get(normalized) || inferRegionFromCourseName(courseName);
+      const regionSource = manualRegionMap.has(normalized) ? 'MANUAL' : 'AUTO';
       map.set(courseName, {
         courseName,
         region,
+        regionSource,
         sites: siteCodeRaw ? [siteCodeRaw] : [],
         latestCrawledAt: null,
         latestStatus: null,

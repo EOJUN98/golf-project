@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 type RegionKey = '충청' | '수도권' | '강원' | '경상' | '전라' | '제주';
 
@@ -15,6 +16,7 @@ interface WindowStats {
 interface CourseSummary {
   courseName: string;
   region: RegionKey;
+  regionSource: 'MANUAL' | 'AUTO';
   sites: string[];
   latestCrawledAt: string | null;
   latestStatus: string | null;
@@ -90,10 +92,15 @@ export default function CrawlerMonitorClient({
   totalSnapshots,
   loadError,
 }: CrawlerMonitorClientProps) {
+  const router = useRouter();
   const defaultRegion = regionOrder.find((region) => (groupedCourses[region] || []).length > 0) || regionOrder[0];
   const [selectedRegion, setSelectedRegion] = useState<RegionKey>(defaultRegion);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedCourse, setSelectedCourse] = useState<string | null>(null);
+  const [regionDraft, setRegionDraft] = useState<RegionKey>('수도권');
+  const [savingRegion, setSavingRegion] = useState(false);
+  const [regionMessage, setRegionMessage] = useState<string | null>(null);
+  const [regionError, setRegionError] = useState<string | null>(null);
 
   const regionCourses = groupedCourses[selectedRegion] || [];
 
@@ -115,6 +122,75 @@ export default function CrawlerMonitorClient({
   }, [filteredCourses, selectedCourse]);
 
   const selectedSummary = filteredCourses.find((course) => course.courseName === selectedCourse) || null;
+
+  useEffect(() => {
+    if (!selectedSummary) return;
+    setRegionDraft(selectedSummary.region);
+    setRegionMessage(null);
+    setRegionError(null);
+  }, [selectedSummary?.courseName, selectedSummary?.region]);
+
+  const updateRegionMapping = async () => {
+    if (!selectedSummary) return;
+
+    try {
+      setSavingRegion(true);
+      setRegionMessage(null);
+      setRegionError(null);
+
+      const response = await fetch('/api/admin/crawler/regions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseName: selectedSummary.courseName,
+          region: regionDraft,
+          note: '관리자 모니터 화면 수동 지정',
+        }),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json?.error || '지역 저장에 실패했습니다.');
+      }
+
+      setRegionMessage('수동 지역 매핑을 저장했습니다.');
+      router.refresh();
+    } catch (error) {
+      setRegionError(error instanceof Error ? error.message : '저장 중 오류가 발생했습니다.');
+    } finally {
+      setSavingRegion(false);
+    }
+  };
+
+  const clearRegionMapping = async () => {
+    if (!selectedSummary) return;
+
+    try {
+      setSavingRegion(true);
+      setRegionMessage(null);
+      setRegionError(null);
+
+      const response = await fetch('/api/admin/crawler/regions', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseName: selectedSummary.courseName,
+        }),
+      });
+
+      const json = await response.json();
+      if (!response.ok) {
+        throw new Error(json?.error || '매핑 해제에 실패했습니다.');
+      }
+
+      setRegionMessage('수동 지역 매핑을 해제했습니다.');
+      router.refresh();
+    } catch (error) {
+      setRegionError(error instanceof Error ? error.message : '해제 중 오류가 발생했습니다.');
+    } finally {
+      setSavingRegion(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -221,6 +297,62 @@ export default function CrawlerMonitorClient({
                   <p className="text-sm text-gray-600 mt-1">
                     지역: {selectedSummary.region} | 수집 사이트: {selectedSummary.sites.join(', ')}
                   </p>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <p className="text-sm font-semibold text-gray-900">지역 매핑</p>
+                    <span
+                      className={
+                        selectedSummary.regionSource === 'MANUAL'
+                          ? 'text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700'
+                          : 'text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-700'
+                      }
+                    >
+                      {selectedSummary.regionSource === 'MANUAL' ? '수동 매핑' : '자동 분류'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row md:items-center gap-2">
+                    <select
+                      value={regionDraft}
+                      onChange={(event) => setRegionDraft(event.target.value as RegionKey)}
+                      disabled={savingRegion}
+                      className="w-full md:w-52 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="충청">충청</option>
+                      <option value="수도권">수도권</option>
+                      <option value="강원">강원</option>
+                      <option value="경상">경상</option>
+                      <option value="전라">전라</option>
+                      <option value="제주">제주</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={updateRegionMapping}
+                      disabled={savingRegion}
+                      className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-50"
+                    >
+                      {savingRegion ? '저장 중...' : '지역 저장'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={clearRegionMapping}
+                      disabled={savingRegion}
+                      className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-semibold disabled:opacity-50"
+                    >
+                      자동 분류로 복귀
+                    </button>
+                  </div>
+
+                  {regionMessage && (
+                    <p className="mt-2 text-xs text-emerald-700">{regionMessage}</p>
+                  )}
+                  {regionError && (
+                    <p className="mt-2 text-xs text-red-700">{regionError}</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
