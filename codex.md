@@ -322,3 +322,25 @@
   - 현재는 `SUPABASE_SERVICE_ROLE_KEY` 부재로 시드/크롤링 본 실행은 차단(가드 정상)
 - 원격 DB 선행 반영(MCP):
   - `external_price_targets`에 기본 타깃 5건 upsert 완료(id 1~5)
+
+### 2026-02-12 15차 기록 (13:25 KST, Teeup club_id 자동 발굴 단계)
+- 작업:
+  - TeeupNJoy `club_ids` 자동 발굴 스크립트 추가
+  - 대량 스캔 안정화를 위해 워커별 페이지 분리 + 재시도 로직 적용
+  - 루트에서 호출 가능한 명령 추가
+- 변경 파일:
+  - `crawler/src/discover-teeup-club-ids.mjs`
+  - `crawler/package.json`
+  - `crawler/README.md`
+  - `scripts/discover-teeup-club-ids.mjs`
+  - `package.json`
+- 핵심 결과:
+  - 신규 명령:
+    - `npm run crawl:teeup:discover -- --from=1 --to=500 --concurrency=10`
+  - 발굴 결과(2026-02-19 기준, 1~500 스캔):
+    - `club_ids = [68, 207, 259, 277, 281, 287]`
+  - Supabase 원격 반영(MCP):
+    - `external_price_targets.site_code='teeupnjoy'`의 `parser_config.club_ids` 업데이트 완료
+- 검증:
+  - `npm --prefix crawler run check` 통과
+  - discovery 실행 80/200/500 범위 모두 통과

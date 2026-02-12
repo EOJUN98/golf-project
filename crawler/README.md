@@ -41,6 +41,16 @@ npm run target:seed
 ```
 주의: `teeupnjoy`는 `parser_config.club_ids` 값이 실제 운영 매핑으로 갱신되어야 전량 수집이 가능합니다.
 
+TeeupNJoy `club_ids` 자동 발굴:
+```bash
+npm run teeup:discover -- --from=1 --to=500 --date=2026-02-19
+```
+발견된 club_ids를 타깃 parser_config에 즉시 반영:
+```bash
+npm run teeup:discover -- --from=1 --to=500 --write-site=teeupnjoy
+# 또는 --write-target-id=1
+```
+
 크롤링 실행:
 ```bash
 npm run crawl -- --dry-run
@@ -52,5 +62,6 @@ npm run crawl -- --window=WEEK_BEFORE
 - `npm run crawl:prices`
 - `npm run crawl:target:add`
 - `npm run crawl:target:seed`
+- `npm run crawl:teeup:discover`
 
 즉, 앱 코드와 크롤러 실행/의존성은 분리되어 관리됩니다.

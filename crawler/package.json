@@ -8,7 +8,8 @@
     "crawl": "node src/crawl-final-prices.mjs",
     "target:add": "node src/add-crawl-target.mjs",
     "target:seed": "node src/seed-default-targets.mjs",
-    "check": "node --check src/crawl-final-prices.mjs && node --check src/add-crawl-target.mjs && node --check src/seed-default-targets.mjs",
+    "teeup:discover": "node src/discover-teeup-club-ids.mjs",
+    "check": "node --check src/crawl-final-prices.mjs && node --check src/add-crawl-target.mjs && node --check src/seed-default-targets.mjs && node --check src/discover-teeup-club-ids.mjs",
     "install:browser": "playwright install chromium"
   },
   "dependencies": {
