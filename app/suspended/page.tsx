@@ -9,6 +9,8 @@ import { UserX, Home, Mail } from 'lucide-react';
 import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 export default async function SuspendedPage() {
   const user = await getCurrentUserWithRoles();
 

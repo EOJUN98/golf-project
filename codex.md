@@ -481,3 +481,89 @@
   - `npm run lint` 통과
   - `npm run build` 통과
   - `api/admin/crawler/regions` 라우트 생성 확인
+
+### 2026-02-12 22차 기록 (14:29 KST, 슈퍼어드민 계정 점검/복구)
+- 작업:
+  - 앱 Supabase 프로젝트(`rgbwzpwrbcppdydihxye`) 상태 점검
+  - `INACTIVE(paused)` 상태로 인해 관리자 계정 생성 불가 원인 확인
+  - Management API로 프로젝트 restore 실행
+  - DB 기동 완료 후 슈퍼어드민 존재 여부 검증
+- 실행/확인:
+  - `POST https://api.supabase.com/v1/projects/rgbwzpwrbcppdydihxye/restore` 호출 성공(HTTP 200)
+  - 프로젝트 상태 전이 확인: `COMING_UP` -> `RESTORING` -> `ACTIVE_HEALTHY`
+  - SQL 확인 결과:
+    - `public.users` 총 1명, `is_super_admin=true` 1명
+    - 슈퍼어드민 이메일: `gogyeo12345@gmail.com`
+- 결론:
+  - 조건이 "없으면 생성"이므로 신규 슈퍼어드민 계정 생성은 미실행
+  - 기존 슈퍼어드민 계정이 정상 존재함을 확인
+
+### 2026-02-12 23차 기록 (18:16 KST, 백업 슈퍼어드민 계정 생성)
+- 작업:
+  - 백업용 슈퍼어드민 계정 신규 생성 요청 처리
+  - `auth.users` 생성 후 `public.users` 슈퍼어드민 권한 동기화
+- 생성 계정:
+  - 이메일: `backup.superadmin.20260212181546@tugol.dev`
+  - Auth ID: `859aaba2-7439-42c7-a122-bdc82c5290e7`
+  - 비밀번호: 마스킹 기록(평문 미저장)
+- 처리 상세:
+  - `auth/v1/admin/users`로 이메일 인증 완료 상태(`email_confirm=true`) 사용자 생성
+  - `public.users`에 upsert하여 `is_super_admin=true`, `is_admin=true` 반영
+  - 스키마 차이(`segment_type` 부재)로 1차 동기화 실패 후, 실제 컬럼 기준 SQL로 재적용
+- 검증:
+  - 패스워드 로그인 토큰 발급 성공(`grant_type=password`)
+  - 집계 확인: `public.users` 총 2명, 슈퍼어드민 2명
+
+### 2026-02-12 24차 기록 (18:20 KST, 다음 단계: 배포 안정화 정리)
+- 작업:
+  - `next build`/`eslint` 재검증으로 배포 차단 이슈 점검
+  - Next.js 루트 경고 제거 및 인증 기반 페이지 동적 렌더링 명시
+- 변경 파일:
+  - `next.config.ts`
+  - `app/admin/layout.tsx`
+  - `app/suspended/page.tsx`
+- 적용 내용:
+  - `next.config.ts`에 `turbopack.root = process.cwd()` 추가
+    - 다중 lockfile 환경에서 잘못된 workspace root 추론 경고 제거
+  - `app/admin/layout.tsx`에 `export const dynamic = 'force-dynamic'` 추가
+  - `app/suspended/page.tsx`에 `export const dynamic = 'force-dynamic'` 추가
+    - 쿠키 기반 인증 페이지의 정적 생성 시도/노이즈 로그 제거
+- 검증:
+  - `npm run build` 성공 (Dynamic server usage 로그 사라짐)
+  - `npm run lint` 성공
+
+### 2026-02-12 25차 기록 (18:29 KST, Tailwind 해석 오류 수정)
+- 이슈:
+  - 로컬 실행 시 `Error: Can't resolve 'tailwindcss' in '/Users/mybook/Desktop'` 발생
+- 원인 분석:
+  - `next.config.ts`에서 `turbopack.root = process.cwd()` 사용 중이었고,
+  - `Desktop`에서 `npm --prefix tugol-app-main run dev/build`로 실행하면 cwd가 상위 경로(`/Users/mybook/Desktop`)로 잡혀 모듈 해석 기준이 틀어짐
+- 변경 파일:
+  - `next.config.ts`
+- 수정 내용:
+  - Turbopack root를 `process.cwd()`에서 `next.config.ts` 파일 위치 기준 절대경로로 고정
+  - `fileURLToPath(import.meta.url)` + `path.dirname(...)` 사용
+- 검증:
+  - 프로젝트 루트 실행: `npm run build` 성공
+  - 상위 폴더 실행: `(cd /Users/mybook/Desktop && npm --prefix tugol-app-main run build)` 성공
+
+### 2026-02-12 26차 기록 (18:37 KST, tailwindcss Desktop resolve 재발 근본 해결)
+- 이슈 재현:
+  - dev 실행 후 첫 컴파일 시 재발
+  - 오류: `Error: Can't resolve 'tailwindcss' in '/Users/mybook/Desktop'`
+  - resolver details:
+    - description file: `/Users/mybook/package.json (relative path: ./Desktop)`
+    - 모듈 탐색이 `/Users/mybook/node_modules` 기준으로 진행되어 프로젝트 `node_modules`를 보지 못함
+- 원인:
+  - `npm --prefix tugol-app-main run dev` 방식에서 Next 프로세스 cwd가 상위 경로(`Desktop`)로 유지되는 케이스 존재
+  - 이때 CSS의 `@import "tailwindcss"` 모듈 해석 기준이 잘못된 cwd를 따라가며 실패
+- 변경 파일:
+  - `package.json`
+- 수정 내용:
+  - `dev/build/start/lint` 스크립트에서 항상 패키지 루트로 이동 후 실행하도록 고정
+  - 적용식: `cd "$(dirname "$npm_package_json")" && <command>`
+- 검증:
+  - `cd /Users/mybook/Desktop/tugol-app-main && npm run build` 성공
+  - `cd /Users/mybook/Desktop && npm --prefix tugol-app-main run build` 성공
+  - `cd /Users/mybook/Desktop && npm --prefix tugol-app-main run dev` 후 `GET /` 컴파일 성공
+  - dev 로그 기준 tailwindcss resolve 오류 미재발 확인

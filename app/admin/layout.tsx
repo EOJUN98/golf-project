@@ -12,6 +12,8 @@ import { notFound, redirect } from 'next/navigation';
 import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 import AdminLayoutClient from '@/components/admin/AdminLayoutClient';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminLayout({
   children,
 }: {
@@ -20,7 +22,8 @@ export default async function AdminLayout({
   // ============================================================================
   // DEMO MODE: Bypass all authentication and authorization checks
   // ============================================================================
-  const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+  const DEMO_MODE =
+    process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
   if (DEMO_MODE) {
     console.log('[DEMO MODE] Admin layout - bypassing all auth checks');
