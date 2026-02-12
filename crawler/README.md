@@ -35,6 +35,12 @@ npm run target:add -- \
   --config='{"club_id":3,"join_type":"join"}'
 ```
 
+기본 타깃(teeupnjoy/golfrock/golfpang/golfmon/smartscore) 자동 등록:
+```bash
+npm run target:seed
+```
+주의: `teeupnjoy`는 `parser_config.club_ids` 값이 실제 운영 매핑으로 갱신되어야 전량 수집이 가능합니다.
+
 크롤링 실행:
 ```bash
 npm run crawl -- --dry-run
@@ -45,5 +51,6 @@ npm run crawl -- --window=WEEK_BEFORE
 루트 `package.json`의 아래 스크립트는 이 프로젝트를 호출만 합니다.
 - `npm run crawl:prices`
 - `npm run crawl:target:add`
+- `npm run crawl:target:seed`
 
 즉, 앱 코드와 크롤러 실행/의존성은 분리되어 관리됩니다.

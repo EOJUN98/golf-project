@@ -617,12 +617,19 @@ async function crawlGolfRockList(browser, target) {
 
 async function crawlTeeupNjoyApi(browser, target, args) {
   const parserConfig = parseParserConfig(target);
-  const clubId = parserConfig.club_id;
+  const clubIdsRaw = Array.isArray(parserConfig.club_ids)
+    ? parserConfig.club_ids
+    : parserConfig.club_id
+      ? [parserConfig.club_id]
+      : [];
+  const clubIds = clubIdsRaw
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value) && value > 0);
   const joinType = parserConfig.join_type || 'join';
   const page = await browser.newPage();
   const desiredWindows = args.window ? [args.window] : COLLECTION_WINDOWS;
 
-  if (!clubId) {
+  if (clubIds.length === 0) {
     return {
       success: true,
       rows: [
@@ -631,7 +638,7 @@ async function crawlTeeupNjoyApi(browser, target, args) {
           crawl_status: 'FAILED',
           availability_status: 'FAILED',
           source_platform: 'WEB',
-          error_message: 'Missing parser_config.club_id for teeupnjoy',
+          error_message: 'Missing parser_config.club_id or parser_config.club_ids for teeupnjoy',
           payload: { parser_config: parserConfig },
         }),
       ],
@@ -654,96 +661,98 @@ async function crawlTeeupNjoyApi(browser, target, args) {
         timeout: 60000,
       });
 
-      const jsonResponse = await page.evaluate(
-        async ({ bookingDay, clubIdValue, joinTypeValue }) => {
-          const params = new URLSearchParams();
-          params.set('trgetTcYn', 'Y');
-          params.set('bookingDay', bookingDay);
-          params.set('bookingEndDay', bookingDay);
-          params.set('clubId', String(clubIdValue));
-          params.set('joinType', joinTypeValue);
+      for (const clubId of clubIds) {
+        const jsonResponse = await page.evaluate(
+          async ({ bookingDay, clubIdValue, joinTypeValue }) => {
+            const params = new URLSearchParams();
+            params.set('trgetTcYn', 'Y');
+            params.set('bookingDay', bookingDay);
+            params.set('bookingEndDay', bookingDay);
+            params.set('clubId', String(clubIdValue));
+            params.set('joinType', joinTypeValue);
 
-          const response = await fetch('/hp/join/hpJoinTeeTimeSearchClub.do', {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            },
-            body: params.toString(),
-            credentials: 'include',
-          });
+            const response = await fetch('/hp/join/hpJoinTeeTimeSearchClub.do', {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              },
+              body: params.toString(),
+              credentials: 'include',
+            });
 
-          const text = await response.text();
-          try {
-            return { ok: true, json: JSON.parse(text) };
-          } catch {
-            return { ok: false, text: text.slice(0, 500) };
+            const text = await response.text();
+            try {
+              return { ok: true, json: JSON.parse(text) };
+            } catch {
+              return { ok: false, text: text.slice(0, 500) };
+            }
+          },
+          {
+            bookingDay: formatYyyymmdd(horizon.date),
+            clubIdValue: clubId,
+            joinTypeValue: joinType,
           }
-        },
-        {
-          bookingDay: formatYyyymmdd(horizon.date),
-          clubIdValue: clubId,
-          joinTypeValue: joinType,
-        }
-      );
-
-      if (!jsonResponse.ok) {
-        out.push(
-          buildBaseSnapshot(target, {
-            source_url: listUrl,
-            play_date: horizon.date,
-            crawl_status: 'FAILED',
-            availability_status: 'FAILED',
-            source_platform: 'WEB',
-            collection_window: horizon.window,
-            error_message: 'Failed to parse teeupnjoy response',
-            payload: { response_head: jsonResponse.text },
-          })
         );
-        continue;
-      }
 
-      const json = jsonResponse.json;
-      if (!json.success) {
-        out.push(
-          buildBaseSnapshot(target, {
-            source_url: listUrl,
-            play_date: horizon.date,
-            crawl_status: 'SUCCESS',
-            availability_status: 'AUTH_REQUIRED',
-            source_platform: 'WEB',
-            collection_window: horizon.window,
-            error_message: json.redirect ? `Redirected to ${json.redirect}` : 'Request rejected',
-            payload: json,
-          })
-        );
-        continue;
-      }
-
-      const rows = (json.resultList && json.resultList[formatYyyymmdd(horizon.date)]) || [];
-      for (const item of rows) {
-        const courseName = item.prName || target.course_name;
-        if (!courseMatches(target.course_name, courseName)) {
+        if (!jsonResponse.ok) {
+          out.push(
+            buildBaseSnapshot(target, {
+              source_url: listUrl,
+              play_date: horizon.date,
+              crawl_status: 'FAILED',
+              availability_status: 'FAILED',
+              source_platform: 'WEB',
+              collection_window: horizon.window,
+              error_message: 'Failed to parse teeupnjoy response',
+              payload: { club_id: clubId, response_head: jsonResponse.text },
+            })
+          );
           continue;
         }
 
-        const teeTime = item.bookingTime
-          ? `${String(item.bookingTime).slice(0, 2)}:${String(item.bookingTime).slice(2, 4)}`
-          : null;
+        const json = jsonResponse.json;
+        if (!json.success) {
+          out.push(
+            buildBaseSnapshot(target, {
+              source_url: listUrl,
+              play_date: horizon.date,
+              crawl_status: 'SUCCESS',
+              availability_status: 'AUTH_REQUIRED',
+              source_platform: 'WEB',
+              collection_window: horizon.window,
+              error_message: json.redirect ? `Redirected to ${json.redirect}` : 'Request rejected',
+              payload: { club_id: clubId, ...json },
+            })
+          );
+          continue;
+        }
 
-        out.push(
-          buildBaseSnapshot(target, {
-            course_name: courseName,
-            source_url: listUrl,
-            play_date: parseYyyymmdd(item.bookingDay) || horizon.date,
-            tee_time: parseTeeTime(teeTime),
-            final_price: parsePrice(item.bookDiscount),
-            crawl_status: 'SUCCESS',
-            availability_status: item.bookDiscount ? 'AVAILABLE' : 'NO_DATA',
-            source_platform: 'WEB',
-            collection_window: horizon.window,
-            payload: item,
-          })
-        );
+        const rows = (json.resultList && json.resultList[formatYyyymmdd(horizon.date)]) || [];
+        for (const item of rows) {
+          const courseName = item.prName || target.course_name;
+          if (!courseMatches(target.course_name, courseName)) {
+            continue;
+          }
+
+          const teeTime = item.bookingTime
+            ? `${String(item.bookingTime).slice(0, 2)}:${String(item.bookingTime).slice(2, 4)}`
+            : null;
+
+          out.push(
+            buildBaseSnapshot(target, {
+              course_name: courseName,
+              source_url: listUrl,
+              play_date: parseYyyymmdd(item.bookingDay) || horizon.date,
+              tee_time: parseTeeTime(teeTime),
+              final_price: parsePrice(item.bookDiscount),
+              crawl_status: 'SUCCESS',
+              availability_status: item.bookDiscount ? 'AVAILABLE' : 'NO_DATA',
+              source_platform: 'WEB',
+              collection_window: horizon.window,
+              payload: { club_id: clubId, ...item },
+            })
+          );
+        }
       }
 
       if (horizon.window === 'IMMINENT_3H') {
@@ -758,7 +767,7 @@ async function crawlTeeupNjoyApi(browser, target, args) {
               source_platform: 'WEB',
               collection_window: 'IMMINENT_3H',
               error_message: 'No imminent (<=3h) listing found',
-              payload: { club_id: clubId, reason: 'no_imminent_rows_in_api' },
+              payload: { club_ids: clubIds, reason: 'no_imminent_rows_in_api' },
             })
           );
         }

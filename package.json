@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "crawl:prices": "node scripts/crawl-final-prices.mjs",
-    "crawl:target:add": "node scripts/add-crawl-target.mjs"
+    "crawl:target:add": "node scripts/add-crawl-target.mjs",
+    "crawl:target:seed": "node scripts/seed-crawl-targets.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

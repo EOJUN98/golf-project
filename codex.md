@@ -293,3 +293,32 @@
   - `node --check scripts/crawl-final-prices.mjs` 통과
   - `node --check scripts/add-crawl-target.mjs` 통과
   - `npm run crawl:prices -- --dry-run --limit=1` 시 크롤러가 분리 실행되며 env 가드(`SUPABASE_SERVICE_ROLE_KEY`) 정상 작동
+
+### 2026-02-12 14차 기록 (13:22 KST, 크롤러 운영 자동화/시드 단계)
+- 작업:
+  - 독립 크롤러 프로젝트에 기본 타깃 자동등록 기능 추가
+  - TeeupNJoy 어댑터를 `club_ids` 다중 처리로 확장
+  - 루트 명령에서 기본 타깃 시드 실행 가능하도록 래퍼 추가
+- 변경 파일:
+  - `crawler/src/seed-default-targets.mjs`
+  - `crawler/src/crawl-final-prices.mjs`
+  - `crawler/package.json`
+  - `crawler/README.md`
+  - `scripts/seed-crawl-targets.mjs`
+  - `package.json`
+  - `.gitignore`
+- 핵심 결과:
+  - 신규 명령:
+    - `cd crawler && npm run target:seed`
+    - 루트에서 `npm run crawl:target:seed`
+  - 기본 타깃 5종 자동 시드:
+    - `teeupnjoy`, `golfrock`, `golfpang`, `golfmon`, `smartscore`
+  - TeeupNJoy 파서 설정:
+    - `parser_config.club_id` 단일값 + `parser_config.club_ids` 배열 모두 지원
+  - `.gitignore`에 `!crawler/.env.local.example` 예외 추가
+- 검증:
+  - `npm --prefix crawler run check` 통과
+  - `npm run crawl:target:seed` 실행 시 크롤러 분리 실행 확인
+  - 현재는 `SUPABASE_SERVICE_ROLE_KEY` 부재로 시드/크롤링 본 실행은 차단(가드 정상)
+- 원격 DB 선행 반영(MCP):
+  - `external_price_targets`에 기본 타깃 5건 upsert 완료(id 1~5)
