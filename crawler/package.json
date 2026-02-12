@@ -1,0 +1,18 @@
+{
+  "name": "tugol-price-crawler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent crawler service for external golf booking final-price collection",
+  "scripts": {
+    "crawl": "node src/crawl-final-prices.mjs",
+    "target:add": "node src/add-crawl-target.mjs",
+    "check": "node --check src/crawl-final-prices.mjs && node --check src/add-crawl-target.mjs",
+    "install:browser": "playwright install chromium"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.90.1",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.58.2"
+  }
+}

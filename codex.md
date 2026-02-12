@@ -265,3 +265,31 @@
   - `npm run crawl:prices -- --dry-run --limit=3` 실행 시 `SUPABASE_SERVICE_ROLE_KEY` 누락 안내 확인
 - 주의:
   - 현재 git 상태상 `middleware.ts` 삭제 + `proxy.ts` 신규 파일이 모두 추적되어야 리뷰 P1(세션 리프레시 회귀)이 해소됨
+
+### 2026-02-12 13차 기록 (13:05 KST, 크롤러 독립 프로젝트 분리)
+- 작업:
+  - 가격 수집 크롤러를 메인 앱과 분리된 독립 프로젝트(`crawler/`)로 분리
+  - 루트 `scripts/*`는 크롤러 프로젝트 호출용 래퍼로 변경
+- 변경 파일:
+  - `crawler/package.json`
+  - `crawler/package-lock.json`
+  - `crawler/.gitignore`
+  - `crawler/.env.local.example`
+  - `crawler/README.md`
+  - `crawler/src/crawl-final-prices.mjs`
+  - `crawler/src/add-crawl-target.mjs`
+  - `scripts/crawl-final-prices.mjs` (래퍼화)
+  - `scripts/add-crawl-target.mjs` (래퍼화)
+- 핵심 결과:
+  - 크롤러가 앱 내부 스크립트가 아닌 별도 실행 단위로 동작
+  - 크롤러 환경변수 로딩 우선순위:
+    1) `crawler/.env.local`
+    2) 루트 `../.env.local` fallback
+  - 루트 실행 호환성 유지:
+    - `npm run crawl:prices` → `crawler` 프로젝트 실행
+    - `npm run crawl:target:add` → `crawler` 프로젝트 실행
+- 검증:
+  - `npm --prefix crawler run check` 통과
+  - `node --check scripts/crawl-final-prices.mjs` 통과
+  - `node --check scripts/add-crawl-target.mjs` 통과
+  - `npm run crawl:prices -- --dry-run --limit=1` 시 크롤러가 분리 실행되며 env 가드(`SUPABASE_SERVICE_ROLE_KEY`) 정상 작동

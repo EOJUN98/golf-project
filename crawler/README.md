@@ -1,0 +1,49 @@
+# TUGOL Price Crawler (Independent Service)
+
+이 디렉터리는 메인 Next.js 앱과 분리된 **독립 크롤러 프로젝트**입니다.
+가격 로직 기준 데이터를 수집/저장하는 전용 시스템으로 운영합니다.
+
+## 목적
+- 외부 골프 예약 채널의 최종가 수집
+- 9슬롯 샘플링(1/2/3부 × 이른/중간/늦은)
+- 수집 시점 라벨 관리
+  - `WEEK_BEFORE`
+  - `TWO_DAYS_BEFORE`
+  - `SAME_DAY_MORNING`
+  - `IMMINENT_3H`
+
+## 실행
+```bash
+cd crawler
+npm install
+npm run install:browser
+```
+
+환경 변수 파일 생성:
+```bash
+cp .env.local.example .env.local
+```
+
+타깃 등록:
+```bash
+npm run target:add -- \
+  --site=teeupnjoy \
+  --course='360도' \
+  --url='https://www.teeupnjoy.com/hp/join/reslist.do' \
+  --adapter=teeupnjoy_api \
+  --platform=WEB \
+  --config='{"club_id":3,"join_type":"join"}'
+```
+
+크롤링 실행:
+```bash
+npm run crawl -- --dry-run
+npm run crawl -- --window=WEEK_BEFORE
+```
+
+## 루트 앱과의 관계
+루트 `package.json`의 아래 스크립트는 이 프로젝트를 호출만 합니다.
+- `npm run crawl:prices`
+- `npm run crawl:target:add`
+
+즉, 앱 코드와 크롤러 실행/의존성은 분리되어 관리됩니다.

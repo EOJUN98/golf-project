@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "crawl:prices": "node scripts/crawl-final-prices.mjs",
+    "crawl:target:add": "node scripts/add-crawl-target.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
