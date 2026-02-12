@@ -1,5 +1,5 @@
 /**
- * SDD-08: Next.js Middleware - Auth & Route Protection
+ * SDD-08: Next.js Proxy (formerly Middleware) - Auth & Route Protection
  *
  * Protects /admin routes and manages Supabase session refresh
  *
@@ -12,14 +12,15 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // ============================================================================
   // DEMO MODE: Bypass ALL authentication and authorization checks
   // ============================================================================
-  const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+  const DEMO_MODE =
+    process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
 
   if (DEMO_MODE) {
-    console.log('[DEMO MODE] Middleware - bypassing all auth checks for:', request.nextUrl.pathname);
+    console.log('[DEMO MODE] Proxy - bypassing all auth checks for:', request.nextUrl.pathname);
     return NextResponse.next({
       request: {
         headers: request.headers,
