@@ -567,3 +567,20 @@
   - `cd /Users/mybook/Desktop && npm --prefix tugol-app-main run build` 성공
   - `cd /Users/mybook/Desktop && npm --prefix tugol-app-main run dev` 후 `GET /` 컴파일 성공
   - dev 로그 기준 tailwindcss resolve 오류 미재발 확인
+
+### 2026-02-12 27차 기록 (18:40 KST, 다음 단계: 크롤링 시세를 Pricing API에 1차 연동)
+- 작업:
+  - `/api/pricing` 응답에 외부 크롤링 시세 레퍼런스 추가
+  - 가격 계산값 자체를 강제 변경하지 않고, 비교 가능한 시세 메타데이터를 우선 노출
+- 변경 파일:
+  - `app/api/pricing/route.ts`
+- 적용 내용:
+  - `tee_times.golf_club_id` -> `golf_clubs.name` 매핑 조회 추가
+  - `external_price_snapshots`에서 날짜 범위 기준 최신 스냅샷 조회 후 코스명 정규화 매칭
+  - 각 티타임 응답에 `marketReference` 필드 추가:
+    - `courseName`, `playDate`, `finalPrice`, `crawledAt`, `availabilityStatus`
+    - 내부 계산가 대비 편차 `deltaFromMarket` (`ourFinal - marketFinal`)
+  - 응답 `meta`에 `marketReference.enabled`, `snapshotKeys` 추가
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과
