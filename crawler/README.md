@@ -57,12 +57,18 @@ npm run crawl -- --dry-run
 npm run crawl -- --window=WEEK_BEFORE
 ```
 
+수집 헬스 리포트:
+```bash
+npm run report:health -- --hours=24
+```
+
 ## 루트 앱과의 관계
 루트 `package.json`의 아래 스크립트는 이 프로젝트를 호출만 합니다.
 - `npm run crawl:prices`
 - `npm run crawl:target:add`
 - `npm run crawl:target:seed`
 - `npm run crawl:teeup:discover`
+- `npm run crawl:health`
 
 즉, 앱 코드와 크롤러 실행/의존성은 분리되어 관리됩니다.
 

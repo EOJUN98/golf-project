@@ -371,3 +371,29 @@
 - MCP 확인:
   - `external_price_targets` 5건 활성 상태 확인
   - `external_price_snapshots` 현재 0건 확인(스케줄 실행 후 증가 예정)
+
+### 2026-02-12 17차 기록 (13:55 KST, 자동 적재 모니터링 단계)
+- 작업:
+  - 자동 크롤링 이후 적재 상태를 점검하는 헬스 리포트 파이프라인 추가
+  - GitHub Actions 워크플로우 마지막에 자동 헬스 리포트 출력 단계 추가
+- 변경 파일:
+  - `crawler/src/report-snapshot-health.mjs`
+  - `crawler/package.json`
+  - `scripts/crawl-health-report.mjs`
+  - `package.json`
+  - `.github/workflows/crawler-ingest.yml`
+  - `crawler/README.md`
+  - `crawler/docs/monitoring-sql.md`
+- 핵심 결과:
+  - 신규 명령:
+    - `npm run crawl:health -- --hours=24`
+    - (`crawler` 내부) `npm run report:health`
+  - 리포트 내용:
+    - 사이트/윈도우/상태/가용성 분포
+    - 상위 에러 메시지
+    - 최근 N시간 스냅샷 없는 활성 타깃 목록
+  - Actions 자동화:
+    - `Crawler Ingest` 실행 마지막에 `report:health -- --hours=48` 자동 출력
+- 검증:
+  - `npm --prefix crawler run check` 통과
+  - 로컬 `crawl:health` 실행 시 서비스키 미설정 가드로 정상 실패

@@ -102,3 +102,7 @@ jobs:
       - name: Crawl single window
         if: github.event_name == 'workflow_dispatch' && inputs.mode != 'ALL'
         run: npm --prefix crawler run crawl -- --window=${{ inputs.mode }}
+
+      - name: Health report (last 48h)
+        if: always()
+        run: npm --prefix crawler run report:health -- --hours=48
