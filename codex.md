@@ -408,3 +408,27 @@
 - 효과:
   - 스냅샷 적재량 증가 속도 완화
   - 운영비/로그량 절감
+
+### 2026-02-12 19차 기록 (14:20 KST, 크롤링 모니터 UI 신설)
+- 작업:
+  - 관리자 페이지에 지역/골프장 단위 크롤링 모니터 UI 추가
+  - 사이드바 네비게이션에 `크롤링 모니터` 메뉴 추가
+- 변경 파일:
+  - `app/admin/crawler/page.tsx`
+  - `components/admin/CrawlerMonitorClient.tsx`
+  - `components/admin/AdminLayoutClient.tsx`
+- 핵심 기능:
+  - 지역 탭: `충청 / 수도권 / 강원 / 경상 / 전라 / 제주`
+  - 골프장 목록: 지역별 필터 + 검색
+  - 골프장 선택 시 요약정보 표시:
+    - 최신 수집시각/최신 최종가/최저-평균-최고
+    - 상태 카운트(AVAILABLE/NO_DATA/FAILED/AUTH_REQUIRED)
+    - 윈도우별(1주전/2일전/당일오전/임박3시간) 수집 통계
+    - 최근 오류 메시지
+  - 조회 기준: 최근 30일 스냅샷
+- 데이터 처리:
+  - `external_price_targets`, `external_price_snapshots`에서 서버 사이드 집계
+  - 골프장명 기반 지역 자동 분류 함수 적용(미분류는 수도권 기본 분류)
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과 (`/admin/crawler` 라우트 생성 확인)
