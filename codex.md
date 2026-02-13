@@ -935,3 +935,27 @@
 - 검증:
   - `npm run lint` 통과
   - `npm run build` 통과
+
+### 2026-02-13 45차 기록 (Admin 대시보드/티타임/프라이싱 점검 및 기반 복구)
+- 사용자 이슈:
+  - 대시보드 일별 매출 추이/티타임/프라이싱이 비어 보이거나 동작하지 않음
+- 원인 분석:
+  - 원격 DB 기준 `golf_clubs`, `tee_times`, `reservations`, `weather_cache`가 0건이면 UI가 전부 빈 상태로 보임
+  - `/admin/tee-times`의 서버 액션이 서버에서 anon Supabase 클라이언트를 사용하여 RLS에 막히는 구조(생성/수정/차단 등 대부분 실패)
+  - 홈 프라이싱 쿼리(`getTeeTimesByDate`)가 서버에서 브라우저용 Supabase 클라이언트를 사용하여 세션 사용자/날씨를 제대로 가져오지 못함(세그먼트/날씨 할인 미반영)
+- 변경 파일:
+  - `app/admin/tee-times/actions.ts`
+  - `utils/supabase/queries.ts`
+  - `app/admin/page.tsx`
+  - `app/admin/settings/page.tsx` (신규)
+  - `app/admin/settings/actions.ts` (신규)
+- 조치:
+  - 티타임 관리자 서버 액션을 cookie 기반 서버 클라이언트로 전환하여 RLS 하에서 정상 동작하도록 변경
+  - admin 권한(is_admin)도 superadmin처럼 클럽 접근 가능하도록 권한 판정 보강
+  - 홈 `getTeeTimesByDate`를 server-only로 고정하고, 서버 세션 사용자 + `weather_cache`를 사용해 pricing context에 반영
+  - `/admin/settings` 페이지 추가:
+    - 테이블 row count로 DB 상태 확인
+    - 슈퍼어드민 전용 샘플 데이터 생성 액션(Club 72 + 14일 티타임 + 날씨) 추가
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과

@@ -7,9 +7,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 type TeeTime = Database['public']['Tables']['tee_times']['Row'];
 type TeeTimeInsert = Database['public']['Tables']['tee_times']['Insert'];
@@ -36,6 +36,7 @@ function getKstDayRange(date: Date) {
 interface UserRole {
   userId: string;
   isSuperAdmin: boolean;
+  isAdmin: boolean;
   isClubAdmin: boolean;
   accessibleClubIds: number[];
 }
@@ -51,6 +52,7 @@ async function getUserRole(): Promise<UserRole | null> {
     return {
       userId: user.id,
       isSuperAdmin: user.isSuperAdmin,
+      isAdmin: user.isAdmin,
       isClubAdmin: user.isClubAdmin,
       accessibleClubIds: user.clubIds
     };
@@ -75,9 +77,11 @@ export async function getAccessibleGolfClubs(): Promise<{
       return { success: false, error: 'Unauthorized' };
     }
 
-    if (role.isSuperAdmin) {
+    const supabase = await createSupabaseServerClient();
+
+    if (role.isSuperAdmin || role.isAdmin) {
       // Super admin can see all clubs
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('golf_clubs')
         .select('*')
         .order('name', { ascending: true });
@@ -91,7 +95,7 @@ export async function getAccessibleGolfClubs(): Promise<{
         return { success: true, clubs: [] };
       }
 
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from('golf_clubs')
         .select('*')
         .in('id', role.accessibleClubIds)
@@ -126,7 +130,7 @@ export async function getTeeTimes(
     }
 
     // Permission check
-    if (!role.isSuperAdmin && !role.accessibleClubIds.includes(golfClubId)) {
+    if (!role.isSuperAdmin && !role.isAdmin && !role.accessibleClubIds.includes(golfClubId)) {
       return { success: false, error: 'Access denied to this golf club' };
     }
 
@@ -134,7 +138,8 @@ export async function getTeeTimes(
     const { startISO, endISO } = getKstDayRange(date);
 
     // Query tee times
-    const { data, error } = await (supabase as any)
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
       .from('tee_times')
       .select('*')
       .eq('golf_club_id', golfClubId)
@@ -172,7 +177,7 @@ export async function createTeeTime(payload: {
     }
 
     // Permission check
-    if (!role.isSuperAdmin && !role.accessibleClubIds.includes(payload.golf_club_id)) {
+    if (!role.isSuperAdmin && !role.isAdmin && !role.accessibleClubIds.includes(payload.golf_club_id)) {
       return { success: false, error: 'Access denied to this golf club' };
     }
 
@@ -190,7 +195,8 @@ export async function createTeeTime(payload: {
       updated_by: role.userId,
     };
 
-    const { data, error } = await (supabase as any)
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
       .from('tee_times')
       .insert(insertData)
       .select()
@@ -228,8 +234,10 @@ export async function updateTeeTime(
       return { success: false, error: 'Unauthorized' };
     }
 
+    const supabase = await createSupabaseServerClient();
+
     // Get existing tee time to check permissions and status
-    const { data: existing, error: fetchError } = await (supabase as any)
+    const { data: existing, error: fetchError } = await supabase
       .from('tee_times')
       .select('*')
       .eq('id', id)
@@ -240,7 +248,7 @@ export async function updateTeeTime(
     }
 
     // Permission check
-    if (!role.isSuperAdmin && !role.accessibleClubIds.includes(existing.golf_club_id)) {
+    if (!role.isSuperAdmin && !role.isAdmin && !role.accessibleClubIds.includes(existing.golf_club_id)) {
       return { success: false, error: 'Access denied to this golf club' };
     }
 
@@ -256,7 +264,7 @@ export async function updateTeeTime(
     };
 
     // Update tee time
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('tee_times')
       .update(updateData)
       .eq('id', id)
@@ -287,8 +295,10 @@ export async function blockTeeTime(id: number): Promise<{
       return { success: false, error: 'Unauthorized' };
     }
 
+    const supabase = await createSupabaseServerClient();
+
     // Get existing tee time
-    const { data: existing, error: fetchError } = await (supabase as any)
+    const { data: existing, error: fetchError } = await supabase
       .from('tee_times')
       .select('*')
       .eq('id', id)
@@ -299,7 +309,7 @@ export async function blockTeeTime(id: number): Promise<{
     }
 
     // Permission check
-    if (!role.isSuperAdmin && !role.accessibleClubIds.includes(existing.golf_club_id)) {
+    if (!role.isSuperAdmin && !role.isAdmin && !role.accessibleClubIds.includes(existing.golf_club_id)) {
       return { success: false, error: 'Access denied to this golf club' };
     }
 
@@ -309,7 +319,7 @@ export async function blockTeeTime(id: number): Promise<{
     }
 
     // Update to BLOCKED status
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('tee_times')
       .update({
         status: 'BLOCKED',
@@ -341,8 +351,10 @@ export async function unblockTeeTime(id: number): Promise<{
       return { success: false, error: 'Unauthorized' };
     }
 
+    const supabase = await createSupabaseServerClient();
+
     // Get existing tee time
-    const { data: existing, error: fetchError } = await (supabase as any)
+    const { data: existing, error: fetchError } = await supabase
       .from('tee_times')
       .select('*')
       .eq('id', id)
@@ -353,7 +365,7 @@ export async function unblockTeeTime(id: number): Promise<{
     }
 
     // Permission check
-    if (!role.isSuperAdmin && !role.accessibleClubIds.includes(existing.golf_club_id)) {
+    if (!role.isSuperAdmin && !role.isAdmin && !role.accessibleClubIds.includes(existing.golf_club_id)) {
       return { success: false, error: 'Access denied to this golf club' };
     }
 
@@ -363,7 +375,7 @@ export async function unblockTeeTime(id: number): Promise<{
     }
 
     // Update to OPEN status
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('tee_times')
       .update({
         status: 'OPEN',

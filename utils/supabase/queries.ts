@@ -1,6 +1,8 @@
-import { supabase } from '@/lib/supabase';
+import 'server-only';
+
 import { calculatePricing, PricingContext } from '@/utils/pricingEngine';
 import { Database } from '@/types/database';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 type TeeTimeStatus = Database['public']['Tables']['tee_times']['Row']['status'];
 type UserSegment = Database['public']['Tables']['users']['Row']['segment'];
@@ -55,6 +57,7 @@ export async function getTeeTimesByDate(
   userSegment?: UserSegment,
   userDistanceKm?: number
 ): Promise<TeeTimeWithPricing[]> {
+  const supabase = await createSupabaseServerClient();
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul',
     year: 'numeric',
@@ -81,7 +84,7 @@ export async function getTeeTimesByDate(
         .from('users')
         .select('*')
         .eq('id', sessionUser.id)
-        .single();
+        .maybeSingle();
 
       if (!userError && dbUser) {
         actualUser = dbUser;
@@ -111,11 +114,33 @@ export async function getTeeTimesByDate(
     return [];
   }
 
+  // Fetch weather cache for the date and index by hour (KST hour).
+  const { data: weatherRows, error: weatherError } = await supabase
+    .from('weather_cache')
+    .select('*')
+    .eq('target_date', dateStr);
+
+  if (weatherError) {
+    console.error('Error fetching weather cache:', weatherError);
+  }
+
+  const weatherByHour = new Map<number, Database['public']['Tables']['weather_cache']['Row']>();
+  (weatherRows || []).forEach((row) => {
+    weatherByHour.set(row.target_hour, row);
+  });
+
   return teeTimes.map((teeTime) => {
+    const teeOffDate = new Date(teeTime.tee_off);
+    const kstHour = Number(
+      new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).format(teeOffDate)
+    );
+    const weatherCacheRow = weatherByHour.get(kstHour);
+
     // Build pricing context
     const ctx: PricingContext = {
       teeTime,
       userDistanceKm,
+      weather: weatherCacheRow,
     };
 
     // Create user object for pricing engine with actual DB data or mock
