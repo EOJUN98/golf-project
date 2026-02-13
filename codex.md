@@ -918,3 +918,20 @@
   1. DB 스키마/마이그레이션/환경변수(Vercel, GitHub Secrets) 기준점 확정
   2. Admin 각 메뉴를 서버 액션/관리자 API(세션+requireAdminAccess)로 전환하여 RLS 이슈 제거
   3. 크롤러 실행 파이프라인 구축: GitHub Actions cron(4시간) + run log 저장 + admin/crawler 모니터링 강화
+
+### 2026-02-13 44차 기록 (Admin 회원관리 실DB 연결)
+- 작업:
+  - `/admin/users` 화면을 “브라우저에서 Supabase 직접 update” 방식에서 제거하고,
+    관리자 API(`/api/admin/users`)를 통해서만 조회/수정하도록 전환
+  - Admin 사이드바에서 클럽어드민이 접근 불가한 메뉴(회원/노쇼)를 숨김
+- 변경 파일:
+  - `app/api/admin/users/route.ts`
+  - `app/admin/users/page.tsx`
+  - `components/admin/AdminLayoutClient.tsx`
+- 결과:
+  - 회원 목록 조회: `GET /api/admin/users` (검색/세그먼트/페이지네이션) 구현
+  - 회원 수정: `PATCH /api/admin/users` (세그먼트 변경/관리자 토글/블랙리스트/세그먼트 재계산) 구현
+  - AdminLayout 로그아웃을 서버 액션 기반으로 통일(쿠키 세션 삭제 보장)
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과

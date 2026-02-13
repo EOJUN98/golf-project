@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import {
   User,
@@ -56,22 +55,33 @@ export default function AdminUsersPage() {
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    void fetchUsers();
+  }, [filterSegment]);
 
   const fetchUsers = async () => {
     try {
-      const { data, error } = await (supabase as any)
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
+      setLoading(true);
 
-      if (error) throw error;
+      const params = new URLSearchParams();
+      if (searchTerm.trim()) params.set('q', searchTerm.trim());
+      if (filterSegment !== 'ALL') params.set('segment', filterSegment);
+      params.set('limit', '500');
+      params.set('offset', '0');
 
-      setUsers(data || []);
+      const res = await fetch(`/api/admin/users?${params.toString()}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(json?.error || '회원 목록을 불러오는데 실패했습니다.');
+      }
+
+      setUsers((json.users || []) as UserRow[]);
     } catch (error) {
       console.error('Error fetching users:', error);
-      alert('회원 목록을 불러오는데 실패했습니다.');
+      alert(error instanceof Error ? error.message : '회원 목록을 불러오는데 실패했습니다.');
     } finally {
       setLoading(false);
     }
@@ -81,31 +91,19 @@ export default function AdminUsersPage() {
     setUpdatingUserId(userId);
 
     try {
-      const { error } = await (supabase as any)
-        .from('users')
-        .update({
-          segment: newSegment,
-          segment_override_by: 'ADMIN',
-          segment_override_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ action: 'set-segment', userId, segment: newSegment }),
+      });
 
-      if (error) throw error;
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || '등급 업데이트에 실패했습니다.');
 
-      // Update local state
-      setUsers(prev =>
-        prev.map(user =>
-          user.id === userId
-            ? { ...user, segment: newSegment, segment_override_by: 'ADMIN' }
-            : user
-        )
-      );
-
-      alert('회원 등급이 업데이트되었습니다.');
+      await fetchUsers();
     } catch (error) {
       console.error('Error updating segment:', error);
-      alert('등급 업데이트에 실패했습니다.');
+      alert(error instanceof Error ? error.message : '등급 업데이트에 실패했습니다.');
     } finally {
       setUpdatingUserId(null);
     }
@@ -119,23 +117,19 @@ export default function AdminUsersPage() {
     if (!confirm(confirmMessage)) return;
 
     try {
-      const { error } = await (supabase as any)
-        .from('users')
-        .update({ is_admin: !currentStatus })
-        .eq('id', userId);
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ action: 'toggle-admin', userId, isAdmin: !currentStatus }),
+      });
 
-      if (error) throw error;
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || '권한 변경에 실패했습니다.');
 
-      setUsers(prev =>
-        prev.map(user =>
-          user.id === userId ? { ...user, is_admin: !currentStatus } : user
-        )
-      );
-
-      alert('관리자 권한이 변경되었습니다.');
+      await fetchUsers();
     } catch (error) {
       console.error('Error toggling admin:', error);
-      alert('권한 변경에 실패했습니다.');
+      alert(error instanceof Error ? error.message : '권한 변경에 실패했습니다.');
     }
   };
 
@@ -147,34 +141,24 @@ export default function AdminUsersPage() {
     if (!currentStatus && !reason) return;
 
     try {
-      const { error } = await (supabase as any)
-        .from('users')
-        .update({
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          action: 'set-blacklisted',
+          userId,
           blacklisted: !currentStatus,
-          blacklist_reason: currentStatus ? null : reason,
-          blacklisted_at: currentStatus ? null : new Date().toISOString(),
-          blacklisted_by: currentStatus ? null : 'ADMIN'
-        })
-        .eq('id', userId);
+          reason,
+        }),
+      });
 
-      if (error) throw error;
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || '차단 처리에 실패했습니다.');
 
-      setUsers(prev =>
-        prev.map(user =>
-          user.id === userId
-            ? {
-                ...user,
-                blacklisted: !currentStatus,
-                blacklist_reason: currentStatus ? null : reason
-              }
-            : user
-        )
-      );
-
-      alert(currentStatus ? '차단이 해제되었습니다.' : '회원이 차단되었습니다.');
+      await fetchUsers();
     } catch (error) {
       console.error('Error toggling blacklist:', error);
-      alert('차단 처리에 실패했습니다.');
+      alert(error instanceof Error ? error.message : '차단 처리에 실패했습니다.');
     }
   };
 
@@ -192,6 +176,10 @@ export default function AdminUsersPage() {
 
   const getSegmentConfig = (segment: SegmentType) => {
     return SEGMENT_OPTIONS.find(opt => opt.value === segment) || SEGMENT_OPTIONS[0];
+  };
+
+  const handleSearch = async () => {
+    await fetchUsers();
   };
 
   if (loading) {
@@ -232,6 +220,12 @@ export default function AdminUsersPage() {
               placeholder="이메일, 이름, 전화번호로 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleSearch();
+                }
+              }}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -252,6 +246,15 @@ export default function AdminUsersPage() {
               ))}
             </select>
           </div>
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={handleSearch}
+            className="px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            검색 적용
+          </button>
         </div>
       </div>
 

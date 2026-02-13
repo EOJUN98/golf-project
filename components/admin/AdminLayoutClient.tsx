@@ -6,7 +6,6 @@
 
 'use client';
 
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Users,
@@ -20,7 +19,7 @@ import {
   DollarSign,
   UserX
 } from 'lucide-react';
-import { supabaseClient } from '@/lib/supabase/client';
+import { logout } from '@/app/login/actions';
 import { UserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 
 interface AdminLayoutClientProps {
@@ -29,17 +28,11 @@ interface AdminLayoutClientProps {
 }
 
 export default function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
-  const router = useRouter();
   const consoleRoleLabel = (user.isSuperAdmin || user.isAdmin)
     ? 'ADMIN CONSOLE'
     : user.isClubAdmin
       ? 'CLUB ADMIN CONSOLE'
       : 'MEMBER';
-
-  const handleLogout = async () => {
-    await supabaseClient.auth.signOut();
-    router.push('/login');
-  };
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
@@ -91,21 +84,25 @@ export default function AdminLayoutClient({ children, user }: AdminLayoutClientP
               <span className="font-medium">티타임 관리</span>
             </Link>
 
-            <Link
-              href="/admin/users"
-              className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
-            >
-              <Users size={20} />
-              <span className="font-medium">회원 관리</span>
-            </Link>
+            {(user.isSuperAdmin || user.isAdmin) && (
+              <Link
+                href="/admin/users"
+                className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
+              >
+                <Users size={20} />
+                <span className="font-medium">회원 관리</span>
+              </Link>
+            )}
 
-            <Link
-              href="/admin/no-show"
-              className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
-            >
-              <UserX size={20} />
-              <span className="font-medium">노쇼 관리</span>
-            </Link>
+            {(user.isSuperAdmin || user.isAdmin) && (
+              <Link
+                href="/admin/no-show"
+                className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
+              >
+                <UserX size={20} />
+                <span className="font-medium">노쇼 관리</span>
+              </Link>
+            )}
 
             <Link
               href="/admin/settlements"
@@ -145,13 +142,15 @@ export default function AdminLayoutClient({ children, user }: AdminLayoutClientP
             <span className="font-medium">메인으로</span>
           </Link>
 
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors w-full"
-          >
-            <LogOut size={20} />
-            <span className="font-medium">로그아웃</span>
-          </button>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-lg transition-colors w-full"
+            >
+              <LogOut size={20} />
+              <span className="font-medium">로그아웃</span>
+            </button>
+          </form>
         </div>
       </aside>
 
