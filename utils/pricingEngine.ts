@@ -1,3 +1,12 @@
+/**
+ * Pricing Engine V1 - ACTIVE PRODUCTION VERSION
+ *
+ * This is the only pricing engine used in production.
+ * Used by: app/api/pricing/route.ts, app/api/reservations/route.ts, utils/supabase/queries.ts
+ *
+ * Other versions (V2, V3, SDD-10) exist for reference/future migration.
+ */
+
 import { Database, Json } from '../types/database';
 
 type TeeTime = Database['public']['Tables']['tee_times']['Row'];

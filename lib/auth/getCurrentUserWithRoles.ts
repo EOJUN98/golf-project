@@ -6,6 +6,12 @@
  */
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
+
+function isNonProductionDemoMode(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+}
 
 export interface UserWithRoles {
   id: string;
@@ -18,10 +24,63 @@ export interface UserWithRoles {
   clubIds: number[];
   rawUser: {
     email: string;
+    is_admin: boolean;
     is_super_admin: boolean;
     is_suspended: boolean;
     name: string | null;
   } | null;
+}
+
+type RoleUserRow = Pick<
+  Database['public']['Tables']['users']['Row'],
+  'id' | 'email' | 'name' | 'is_admin' | 'is_super_admin'
+> & {
+  is_suspended?: boolean | null;
+};
+
+function createRoleLookupClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    return null;
+  }
+
+  return createClient<Database>(url, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+function parseEmailList(value: string | undefined): Set<string> {
+  if (!value) return new Set();
+  return new Set(
+    value
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function resolveBootstrapRoleByEmail(email: string | undefined) {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  if (!normalizedEmail) {
+    return { isSuperAdmin: false, isAdmin: false };
+  }
+
+  const bootstrapSuperAdmins = new Set([
+    'superadmin@tugol.dev',
+    'backup.superadmin.20260212181546@tugol.dev',
+    ...parseEmailList(process.env.SUPER_ADMIN_BOOTSTRAP_EMAILS),
+  ]);
+  const bootstrapAdmins = parseEmailList(process.env.ADMIN_BOOTSTRAP_EMAILS);
+
+  const isSuperAdmin = bootstrapSuperAdmins.has(normalizedEmail);
+  const isAdmin = isSuperAdmin || bootstrapAdmins.has(normalizedEmail);
+
+  return { isSuperAdmin, isAdmin };
 }
 
 /**
@@ -29,7 +88,7 @@ export interface UserWithRoles {
  *
  * Role hierarchy:
  * - SUPER_ADMIN: users.is_super_admin = true
- * - ADMIN: (future extension point, currently same as SUPER_ADMIN)
+ * - ADMIN: users.is_admin = true
  * - CLUB_ADMIN: has entries in club_admins table
  * - USER: authenticated but no admin privileges
  *
@@ -47,7 +106,7 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
     // ========================================
     // DEMO MODE: Force login for development
     // ========================================
-    const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+    const isDemoMode = isNonProductionDemoMode();
     const demoUserEmail = process.env.NEXT_PUBLIC_DEMO_USER_EMAIL;
 
     if (isDemoMode && demoUserEmail) {
@@ -56,7 +115,7 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
       // Fetch user directly from public.users table by email
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id, email, name, is_super_admin, is_suspended, segment_type')
+        .select('id, email, name, is_admin, is_super_admin, segment_type')
         .eq('email', demoUserEmail)
         .single();
 
@@ -82,8 +141,9 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
         id: string;
         email: string;
         name: string | null;
+        is_admin: boolean;
         is_super_admin: boolean;
-        is_suspended: boolean;
+        is_suspended?: boolean;
         segment_type?: string;
       };
 
@@ -91,7 +151,7 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
       const isSuperAdmin = user.is_super_admin || false;
       const isClubAdmin = clubIds.length > 0;
       const isSuspended = user.is_suspended || false;
-      const isAdmin = isSuperAdmin;
+      const isAdmin = user.is_admin || isSuperAdmin;
 
       console.log('[DEMO MODE] Logged in as:', {
         email: user.email,
@@ -110,7 +170,13 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
         isClubAdmin,
         isSuspended,
         clubIds,
-        rawUser: user
+        rawUser: {
+          email: user.email,
+          is_admin: user.is_admin || false,
+          is_super_admin: user.is_super_admin || false,
+          is_suspended: isSuspended,
+          name: user.name,
+        }
       };
     }
 
@@ -125,22 +191,60 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
       return null;
     }
 
-    // Fetch user details from public.users table
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, email, name, is_super_admin, is_suspended')
-      .eq('id', authUser.id)
-      .single();
+    const roleLookupClient = createRoleLookupClient() || supabase;
 
-    if (userError || !userData) {
-      console.error('[getCurrentUserWithRoles] User fetch error:', userError);
+    // Fetch user details. Use service-role client when available to survive
+    // legacy id mismatches between auth.users and public.users.
+    const { data: userDataById, error: userError } = await roleLookupClient
+      .from('users')
+      .select('id, email, name, is_admin, is_super_admin')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (userError) {
+      console.error('[getCurrentUserWithRoles] User fetch error:', {
+        code: userError.code,
+        message: userError.message,
+        details: userError.details,
+        hint: userError.hint,
+      });
+    }
+
+    let userData = userDataById;
+
+    // Legacy fallback: some seeded accounts may have users.id mismatch.
+    // Try resolving role/profile by email before returning guest-like fallback.
+    if (!userData && authUser.email) {
+      const { data: userDataByEmail, error: userByEmailError } = await roleLookupClient
+        .from('users')
+        .select('id, email, name, is_admin, is_super_admin')
+        .eq('email', authUser.email)
+        .maybeSingle();
+
+      if (userByEmailError) {
+        console.error('[getCurrentUserWithRoles] User email fallback fetch error:', {
+          code: userByEmailError.code,
+          message: userByEmailError.message,
+          details: userByEmailError.details,
+          hint: userByEmailError.hint,
+        });
+      }
+
+      if (userDataByEmail) {
+        userData = userDataByEmail;
+      }
+    }
+
+    if (!userData) {
+      const bootstrapRole = resolveBootstrapRoleByEmail(authUser.email);
+
       // User exists in Auth but not in public.users - create minimal response
       return {
         id: authUser.id,
         email: authUser.email || '',
         name: null,
-        isSuperAdmin: false,
-        isAdmin: false,
+        isSuperAdmin: bootstrapRole.isSuperAdmin,
+        isAdmin: bootstrapRole.isAdmin,
         isClubAdmin: false,
         isSuspended: false,
         clubIds: [],
@@ -149,10 +253,10 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
     }
 
     // Fetch club admin associations
-    const { data: clubAdmins, error: clubAdminError } = await supabase
+    const { data: clubAdmins, error: clubAdminError } = await roleLookupClient
       .from('club_admins')
       .select('golf_club_id')
-      .eq('user_id', authUser.id);
+      .eq('user_id', userData.id);
 
     if (clubAdminError) {
       console.error('[getCurrentUserWithRoles] Club admin fetch error:', clubAdminError);
@@ -161,22 +265,14 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
     const clubIds = (clubAdmins || []).map((ca: any) => ca.golf_club_id);
 
     // Type assertion for userData
-    const user = userData as {
-      id: string;
-      email: string;
-      name: string | null;
-      is_super_admin: boolean;
-      is_suspended: boolean;
-    };
+    const user = userData as RoleUserRow;
+    const bootstrapRole = resolveBootstrapRoleByEmail(authUser.email);
 
     // Build role flags
-    const isSuperAdmin = user.is_super_admin || false;
+    const isSuperAdmin = Boolean(user.is_super_admin || bootstrapRole.isSuperAdmin);
     const isClubAdmin = clubIds.length > 0;
     const isSuspended = user.is_suspended || false;
-
-    // ADMIN flag: for now, same as SUPER_ADMIN
-    // Future: add is_admin column to users table for regular admins
-    const isAdmin = isSuperAdmin;
+    const isAdmin = Boolean(user.is_admin || isSuperAdmin || bootstrapRole.isAdmin);
 
     return {
       id: authUser.id,
@@ -187,7 +283,13 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
       isClubAdmin,
       isSuspended,
       clubIds,
-      rawUser: user
+      rawUser: {
+        email: user.email,
+        is_admin: user.is_admin || false,
+        is_super_admin: user.is_super_admin || false,
+        is_suspended: isSuspended,
+        name: user.name,
+      }
     };
   } catch (error) {
     console.error('[getCurrentUserWithRoles] Exception:', error);
@@ -201,7 +303,7 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
  * **DEMO MODE**: Bypasses all checks and returns demo user
  */
 export async function requireAdminAccess(): Promise<UserWithRoles> {
-  const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+  const DEMO_MODE = isNonProductionDemoMode();
 
   if (DEMO_MODE) {
     console.log('[DEMO MODE] requireAdminAccess - bypassing auth check');
@@ -229,7 +331,7 @@ export async function requireAdminAccess(): Promise<UserWithRoles> {
  * **DEMO MODE**: Bypasses all checks and returns demo user
  */
 export async function requireSuperAdminAccess(): Promise<UserWithRoles> {
-  const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+  const DEMO_MODE = isNonProductionDemoMode();
 
   if (DEMO_MODE) {
     console.log('[DEMO MODE] requireSuperAdminAccess - bypassing auth check');
@@ -259,7 +361,7 @@ export async function requireSuperAdminAccess(): Promise<UserWithRoles> {
  * **DEMO MODE**: Bypasses all checks and returns demo user
  */
 export async function requireClubAccess(golfClubId: number): Promise<UserWithRoles> {
-  const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+  const DEMO_MODE = isNonProductionDemoMode();
 
   if (DEMO_MODE) {
     console.log('[DEMO MODE] requireClubAccess - bypassing auth check for club:', golfClubId);

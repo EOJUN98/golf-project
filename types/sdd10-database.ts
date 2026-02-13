@@ -57,6 +57,7 @@ export interface CrmSegmentOverride {
 // ============================================================================
 
 export interface RiskFactors {
+  [key: string]: number | undefined;
   segment_modifier: number;
   no_show_history: number;
   consecutive_penalty: number;
@@ -82,9 +83,10 @@ export interface ReservationRiskAssessment {
   precheck_required: boolean;
   penalty_agreement_required: boolean;
   restrictions: {
-    can_book_imminent: boolean;
+    can_book: boolean;
+    requires_precheck: boolean;
+    requires_penalty_agreement: boolean;
     max_concurrent_bookings: number;
-    requires_deposit: boolean;
   };
 }
 
@@ -153,7 +155,7 @@ export interface PaymentMetadata {
   payment_mode: PaymentMode;
   virtual_reference?: VirtualPaymentReference;
   toss_payment_key?: string;
-  custom_data?: Record<string, any>;
+  custom_data?: Record<string, Json>;
 }
 
 // ============================================================================

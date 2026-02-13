@@ -17,7 +17,9 @@ import {
   LogOut,
   ChevronRight,
   User,
+  Shield,
 } from 'lucide-react';
+import { logout } from '@/app/login/actions';
 
 interface MenuClientProps {
   user: {
@@ -25,13 +27,43 @@ interface MenuClientProps {
     email: string;
     name: string;
     phone: string;
+    roleLabel: 'ADMIN' | 'CLUB ADMIN' | 'MEMBER';
+    canAccessAdmin: boolean;
   };
+}
+
+interface MenuItem {
+  icon: typeof Megaphone;
+  label: string;
+  href: string;
+  badge?: string;
+  description?: string;
+}
+
+interface MenuSection {
+  title: string;
+  items: MenuItem[];
 }
 
 export default function MenuClient({ user }: MenuClientProps) {
   const router = useRouter();
 
-  const menuSections = [
+  const menuSections: MenuSection[] = [
+    ...(user.canAccessAdmin
+      ? [
+          {
+            title: '관리자',
+            items: [
+              {
+                icon: Shield,
+                label: '관리자 콘솔',
+                href: '/admin',
+                description: user.roleLabel,
+              },
+            ],
+          } satisfies MenuSection,
+        ]
+      : []),
     {
       title: '고객센터',
       items: [
@@ -76,12 +108,6 @@ export default function MenuClient({ user }: MenuClientProps) {
     },
   ];
 
-  const handleLogout = () => {
-    // Mock logout
-    alert('로그아웃되었습니다');
-    router.push('/');
-  };
-
   return (
     <div className="flex-1 overflow-y-auto pb-20">
       {/* Header */}
@@ -93,7 +119,7 @@ export default function MenuClient({ user }: MenuClientProps) {
           </div>
           <div>
             <p className="font-bold text-gray-900">{user.name}</p>
-            <p className="text-sm text-gray-600">{user.email}</p>
+            <p className="text-sm text-gray-600">{user.roleLabel}</p>
           </div>
         </div>
       </div>
@@ -148,16 +174,18 @@ export default function MenuClient({ user }: MenuClientProps) {
 
         {/* Logout Button */}
         <div className="bg-white rounded-2xl overflow-hidden border border-gray-200">
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-between p-4 hover:bg-red-50 transition-colors"
-          >
-            <div className="flex items-center gap-3">
-              <LogOut size={20} className="text-red-600" />
-              <p className="font-medium text-red-600">로그아웃</p>
-            </div>
-            <ChevronRight size={18} className="text-gray-400" />
-          </button>
+          <form action={logout}>
+            <button
+              type="submit"
+              className="w-full flex items-center justify-between p-4 hover:bg-red-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <LogOut size={20} className="text-red-600" />
+                <p className="font-medium text-red-600">로그아웃</p>
+              </div>
+              <ChevronRight size={18} className="text-gray-400" />
+            </button>
+          </form>
         </div>
       </div>
 

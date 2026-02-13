@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { requireSuperAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
+import { requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
 
 type RegionKey = '충청' | '수도권' | '강원' | '경상' | '전라' | '제주';
 
@@ -18,15 +18,22 @@ function isValidRegion(value: string): value is RegionKey {
 }
 
 function getAdminSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url) {
+    throw new Error('CRAWLER_CONFIG_MISSING:NEXT_PUBLIC_SUPABASE_URL');
+  }
+  if (!serviceRoleKey) {
+    throw new Error('CRAWLER_CONFIG_MISSING:SUPABASE_SERVICE_ROLE_KEY');
+  }
+
+  return createClient(url, serviceRoleKey);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await requireSuperAdminAccess();
+    const user = await requireAdminAccess();
     const body = await request.json();
     const courseNameRaw = String(body?.courseName || '').trim();
     const regionRaw = String(body?.region || '').trim();
@@ -64,8 +71,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, mapping: data });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('CRAWLER_CONFIG_MISSING:')) {
+      const missingKey = error.message.split(':')[1] || '환경변수';
+      return NextResponse.json(
+        { error: `Crawler config missing: ${missingKey}` },
+        { status: 500 }
+      );
+    }
     if (error instanceof Error && (error.message === 'UNAUTHORIZED' || error.message === 'FORBIDDEN')) {
-      return NextResponse.json({ error: 'Unauthorized: Super admin access required' }, { status: 403 });
+      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
@@ -73,7 +87,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    await requireSuperAdminAccess();
+    await requireAdminAccess();
     const body = await request.json();
     const courseNameRaw = String(body?.courseName || '').trim();
 
@@ -95,8 +109,15 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('CRAWLER_CONFIG_MISSING:')) {
+      const missingKey = error.message.split(':')[1] || '환경변수';
+      return NextResponse.json(
+        { error: `Crawler config missing: ${missingKey}` },
+        { status: 500 }
+      );
+    }
     if (error instanceof Error && (error.message === 'UNAUTHORIZED' || error.message === 'FORBIDDEN')) {
-      return NextResponse.json({ error: 'Unauthorized: Super admin access required' }, { status: 403 });
+      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
     }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }

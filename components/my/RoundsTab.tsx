@@ -25,6 +25,8 @@ import {
   Wind,
 } from 'lucide-react';
 import type { UserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
+import { formatKoreanDate } from '@/utils/format';
+import { SCORE_THRESHOLDS } from '@/utils/constants';
 
 interface RoundsTabProps {
   user: UserWithRoles;
@@ -34,28 +36,17 @@ interface RoundsTabProps {
 export default function RoundsTab({ user, rounds }: RoundsTabProps) {
   const [expandedRound, setExpandedRound] = useState<number | null>(null);
 
-  // Format date
-  const formatDate = (dateStr: string) => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'short',
-    });
-  };
-
   // Score color based on performance
   const getScoreColor = (score: number) => {
-    if (score <= 72) return 'text-green-600';
-    if (score <= 85) return 'text-blue-600';
-    if (score <= 100) return 'text-yellow-600';
+    if (score <= SCORE_THRESHOLDS.EXCELLENT) return 'text-green-600';
+    if (score <= SCORE_THRESHOLDS.GOOD) return 'text-blue-600';
+    if (score <= SCORE_THRESHOLDS.AVERAGE) return 'text-yellow-600';
     return 'text-red-600';
   };
 
   // Score badge
   const getScoreBadge = (score: number) => {
-    if (score <= 72) return { label: '언더파', color: 'bg-green-100 text-green-700' };
+    if (score <= SCORE_THRESHOLDS.EXCELLENT) return { label: '언더파', color: 'bg-green-100 text-green-700' };
     if (score <= 80) return { label: '우수', color: 'bg-blue-100 text-blue-700' };
     if (score <= 90) return { label: '양호', color: 'bg-yellow-100 text-yellow-700' };
     return { label: '보통', color: 'bg-gray-100 text-gray-700' };
@@ -105,7 +96,7 @@ export default function RoundsTab({ user, rounds }: RoundsTabProps) {
                       </div>
                       <div className="flex items-center gap-2 text-sm text-gray-600">
                         <Calendar size={14} />
-                        <span>{formatDate(round.played_at)}</span>
+                        <span>{formatKoreanDate(round.played_at)}</span>
                       </div>
                     </div>
 

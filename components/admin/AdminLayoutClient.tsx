@@ -30,6 +30,11 @@ interface AdminLayoutClientProps {
 
 export default function AdminLayoutClient({ children, user }: AdminLayoutClientProps) {
   const router = useRouter();
+  const consoleRoleLabel = (user.isSuperAdmin || user.isAdmin)
+    ? 'ADMIN CONSOLE'
+    : user.isClubAdmin
+      ? 'CLUB ADMIN CONSOLE'
+      : 'MEMBER';
 
   const handleLogout = async () => {
     await supabaseClient.auth.signOut();
@@ -52,18 +57,11 @@ export default function AdminLayoutClient({ children, user }: AdminLayoutClientP
 
           {/* User Info */}
           <div className="mb-6 p-3 bg-blue-50 rounded-lg">
-            <p className="text-sm font-medium text-gray-900 truncate">{user.name || user.email}</p>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {user.isSuperAdmin && (
-                <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
-                  SUPER ADMIN
-                </span>
-              )}
-              {user.isClubAdmin && !user.isSuperAdmin && (
-                <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
-                  CLUB ADMIN
-                </span>
-              )}
+            <p className="text-sm font-semibold text-gray-900 truncate">{user.name || '관리자'}</p>
+            <div className="mt-1">
+              <span className="text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded">
+                {consoleRoleLabel}
+              </span>
             </div>
           </div>
 
@@ -117,7 +115,7 @@ export default function AdminLayoutClient({ children, user }: AdminLayoutClientP
               <span className="font-medium">정산 관리</span>
             </Link>
 
-            {user.isSuperAdmin && (
+            {(user.isSuperAdmin || user.isAdmin) && (
               <Link
                 href="/admin/crawler"
                 className="flex items-center gap-3 px-4 py-3 text-gray-700 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"

@@ -1,5 +1,9 @@
 /**
- * SDD-03 V2: Enhanced Pricing Engine
+ * SDD-03 V2: Enhanced Pricing Engine V3
+ *
+ * STATUS: REFERENCE ONLY - Not used in production
+ * Active version: pricingEngine.ts (V1)
+ * Used by: pricingEngineSDD10.ts (future data-driven layer)
  *
  * Layer Order:
  * 1. Block Layer (Weather blocking)

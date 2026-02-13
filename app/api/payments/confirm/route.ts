@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export async function GET(request: NextRequest) {
   try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: authUser },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !authUser) {
+      return NextResponse.redirect(
+        new URL(`/payment/fail?code=UNAUTHORIZED&message=로그인이 필요합니다`, request.url)
+      );
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const paymentKey = searchParams.get('paymentKey');
     const orderId = searchParams.get('orderId');
     const amount = searchParams.get('amount');
     const teeTimeId = searchParams.get('tee_time_id');
-    const userId = searchParams.get('user_id');
 
     // Validation
     if (!paymentKey || !orderId || !amount) {
@@ -17,9 +28,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (!teeTimeId || !userId) {
+    if (!teeTimeId) {
       return NextResponse.redirect(
-        new URL(`/payment/fail?code=INVALID_REQUEST&message=Missing booking parameters`, request.url)
+        new URL(`/payment/fail?code=INVALID_REQUEST&message=Missing tee time parameter`, request.url)
       );
     }
 
@@ -81,10 +92,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 3: Create reservation in database
-    const { data: reservation, error: reservationError } = await (supabase as any)
+    const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
       .insert({
-        user_id: userId,
+        user_id: authUser.id,
         tee_time_id: Number(teeTimeId),
         base_price: teeTime.base_price,
         final_price: Number(amount),
@@ -103,11 +114,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 4: Update tee time status to BOOKED
-    const { error: updateError } = await (supabase as any)
+    const { error: updateError } = await supabase
       .from('tee_times')
       .update({
         status: 'BOOKED',
-        reserved_by: userId,
+        reserved_by: authUser.id,
         reserved_at: new Date().toISOString(),
       })
       .eq('id', Number(teeTimeId));
@@ -115,7 +126,7 @@ export async function GET(request: NextRequest) {
     if (updateError) {
       console.error('Tee time update error:', updateError);
       // Rollback: Delete the reservation
-      await (supabase as any).from('reservations').delete().eq('id', reservation.id);
+      await supabase.from('reservations').delete().eq('id', reservation.id);
 
       return NextResponse.redirect(
         new URL(`/payment/fail?code=DB_ERROR&message=티타임 상태 업데이트 실패`, request.url)

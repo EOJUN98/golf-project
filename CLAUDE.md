@@ -2,6 +2,12 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Absolute Rule
+
+This project uses Everything Claude Code (ECC) framework.
+All development must follow the rules in `.claude/rules/`, and use the commands/agents/skills provided.
+Source: https://github.com/affaan-m/everything-claude-code
+
 ## Project Overview
 
 TUGOL is a dynamic golf reservation platform that implements sophisticated real-time pricing with multi-factor discounts (weather, time, location, user segment). Built with Next.js 16 App Router, Supabase, and Toss Payments.
@@ -419,6 +425,48 @@ return <div>{Math.random()}</div>; // Now safe
 - **Golf Clubs**: Schema exists but minimal implementation
 - **Testing**: No unit/integration tests yet
 - **Error Boundaries**: No React error boundaries
+
+## Available ECC Commands
+
+- `/tdd` - Test-driven development workflow
+- `/plan` - Create implementation plan
+- `/code-review` - Review code quality
+- `/build-fix` - Fix build errors
+- `/verify` - Verification workflow
+- `/test-coverage` - Check test coverage
+- `/refactor-clean` - Dead code cleanup
+- `/update-docs` - Update documentation
+- `/e2e` - Generate and run E2E tests
+- `/checkpoint` - Create checkpoint
+- `/learn` - Extract reusable patterns
+- `/sessions` - Session management
+
+## Critical Rules (ECC)
+
+### 1. Code Organization
+- Many small files over few large files
+- High cohesion, low coupling
+- 200-400 lines typical, 800 max per file
+- Organize by feature/domain, not by type
+
+### 2. Code Style
+- Immutability always - never mutate objects or arrays
+- Proper error handling with try/catch
+- Input validation with Zod or similar
+
+### 3. Testing
+- TDD: Write tests first
+- 80% minimum coverage
+- Unit, Integration, E2E tests
+
+### 4. Security
+- No hardcoded secrets
+- Environment variables for sensitive data
+- Validate all user inputs
+- Parameterized queries only
+
+### 5. Git Workflow
+- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`, `perf:`, `ci:`
 
 ## Code Style Conventions
 

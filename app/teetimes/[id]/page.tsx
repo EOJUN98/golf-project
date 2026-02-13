@@ -1,21 +1,7 @@
-/**
- * Golf Course Detail Page
- *
- * Shows comprehensive course information:
- * - Course overview and facilities
- * - Green speed, total length
- * - Course map
- * - Strategy tips
- * - Handicap information
- * - Weather forecast (wind, rain probability)
- * - Course issues (maintenance, tournaments, etc.)
- * - CTA to view tee times
- *
- * **MOCK DATA MODE**: Uses fake data
- */
-
+import { notFound } from 'next/navigation';
 import GolfCourseDetailClient from '@/components/teetimes/GolfCourseDetailClient';
 import PageCanvas from '@/components/layout/PageCanvas';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,84 +11,94 @@ interface PageProps {
 
 export default async function GolfCourseDetailPage({ params }: PageProps) {
   const { id } = await params;
+  const clubId = Number(id);
+  if (!Number.isFinite(clubId)) {
+    notFound();
+  }
 
-  // Mock golf course detail data
-  const mockCourseDetail = {
-    id: parseInt(id),
-    name: '인천 클럽72',
-    location_name: '인천 서구',
-    latitude: 37.4563,
-    longitude: 126.6345,
-    description: '도심에서 가까운 명품 골프장으로, 뛰어난 코스 관리와 편리한 시설로 골퍼들에게 인기가 높습니다.',
-    avg_rating: 4.5,
-    total_reviews: 1250,
-    facilities: ['레스토랑', '프로샵', '사우나', '연습장', '락커룸', '캐디'],
+  const supabase = await createSupabaseServerClient();
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 
-    // Course details
-    total_length: 6842,
+  const [clubResult, weatherResult, reviewCountResult] = await Promise.all([
+    supabase
+      .from('golf_clubs')
+      .select('id, name, location_name, location_lat, location_lng')
+      .eq('id', clubId)
+      .single(),
+    supabase
+      .from('weather_cache')
+      .select('*')
+      .eq('target_date', today)
+      .order('target_hour', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('reservations')
+      .select('id, tee_times!inner(golf_club_id)', { head: true, count: 'exact' })
+      .eq('status', 'COMPLETED')
+      .eq('tee_times.golf_club_id', clubId),
+  ]);
+
+  if (clubResult.error || !clubResult.data) {
+    notFound();
+  }
+
+  if (weatherResult.error) {
+    console.error('[GolfCourseDetailPage] Failed to fetch weather:', weatherResult.error);
+  }
+
+  if (reviewCountResult.error) {
+    console.error('[GolfCourseDetailPage] Failed to fetch review count:', reviewCountResult.error);
+  }
+
+  const weatherRow = weatherResult.data;
+  const reviewCount = reviewCountResult.count ?? 0;
+  const rainProbability = weatherRow?.pop ?? 0;
+  const rainfall = weatherRow?.rn1 ?? 0;
+  const weatherCondition = rainfall >= 1 || rainProbability >= 60
+    ? '비'
+    : rainProbability >= 30
+      ? '흐림'
+      : '맑음';
+
+  const course = {
+    id: clubResult.data.id,
+    name: clubResult.data.name,
+    location_name: clubResult.data.location_name,
+    description: `${clubResult.data.location_name} 지역 골프장입니다.`,
+    avg_rating: 0,
+    total_reviews: reviewCount,
+    facilities: ['클럽하우스', '프로샵'],
+    total_length: 0,
     par: 72,
-    green_speed: 10.5,
-    green_type: 'Bent Grass',
-    slope_rating: 128,
-    course_rating: 72.5,
+    green_speed: 0,
+    green_type: '정보 없음',
+    slope_rating: 0,
+    course_rating: 0,
     holes: 18,
-
-    // Course map
-    course_map_url: '/images/course-map-placeholder.png',
-
-    // Hole details (first 4 holes)
-    hole_details: [
-      { hole: 1, par: 4, length: 385, handicap: 7 },
-      { hole: 2, par: 3, length: 165, handicap: 15 },
-      { hole: 3, par: 5, length: 520, handicap: 3 },
-      { hole: 4, par: 4, length: 410, handicap: 5 },
-    ],
-
-    // Strategy tips
     strategy_tips: [
-      '드라이버 샷은 페어웨이 중앙을 노리세요',
-      '그린 주변 벙커가 많으니 주의하세요',
-      '바람이 강한 날에는 클럽 선택에 신중하세요',
-      '파5 홀에서는 2온을 노릴 수 있습니다',
+      '티오프 전 최신 기상 상태를 확인하세요.',
+      '코스 진행 안내는 구장 공지를 우선 확인하세요.',
     ],
-
-    // Weather forecast
     weather: {
-      temperature: 22,
-      condition: '맑음',
-      wind_speed: 5,
-      wind_direction: '서풍',
-      rain_probability: 10,
-      rainfall: 0,
-      forecast_date: new Date().toISOString(),
+      temperature: 20,
+      condition: weatherCondition,
+      wind_speed: weatherRow?.wsd ?? 0,
+      wind_direction: '정보 없음',
+      rain_probability: rainProbability,
+      rainfall,
     },
-
-    // Course notices
-    notices: [
-      {
-        id: 1,
-        notice_type: 'MAINTENANCE',
-        severity: 'INFO',
-        title: '7번 홀 그린 보수 작업',
-        description: '7번 홀 그린 일부 구역 보수 중입니다. 임시 그린을 사용하세요.',
-        start_date: new Date().toISOString(),
-        end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 2,
-        notice_type: 'TOURNAMENT',
-        severity: 'WARNING',
-        title: '주말 프로 대회 진행',
-        description: '이번 주말 프로 대회가 진행됩니다. 일부 시간대 예약 제한이 있습니다.',
-        start_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-        end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ],
+    notices: [],
   };
 
   return (
     <PageCanvas>
-      <GolfCourseDetailClient course={mockCourseDetail} />
+      <GolfCourseDetailClient course={course} />
     </PageCanvas>
   );
 }

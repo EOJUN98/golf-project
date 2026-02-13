@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "cd \"$(dirname \"$npm_package_json\")\" && next dev",
+    "dev": "cd \"$(dirname \"$npm_package_json\")\" && next dev -p 3002",
     "build": "cd \"$(dirname \"$npm_package_json\")\" && next build",
     "start": "cd \"$(dirname \"$npm_package_json\")\" && next start",
     "lint": "cd \"$(dirname \"$npm_package_json\")\" && eslint",

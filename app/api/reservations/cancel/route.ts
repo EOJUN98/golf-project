@@ -8,27 +8,31 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import {
   canUserCancelReservation,
   requestCancellation,
   processPaymentRefund
 } from '@/utils/cancellationPolicyV2';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: authUser },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await req.json();
-    const { reservationId, userId, cancelReason = 'USER_REQUEST' } = body;
+    const { reservationId, cancelReason = 'USER_REQUEST' } = body;
 
     // Validate input
-    if (!reservationId || !userId) {
+    if (!reservationId) {
       return NextResponse.json(
-        { error: 'Missing required fields: reservationId, userId' },
+        { error: 'Missing required field: reservationId' },
         { status: 400 }
       );
     }
@@ -50,7 +54,7 @@ export async function POST(req: NextRequest) {
     // Step 2: Process cancellation (update DB)
     const cancelResult = await requestCancellation(
       reservationId,
-      userId,
+      authUser.id,
       cancelReason,
       supabase
     );
@@ -70,6 +74,7 @@ export async function POST(req: NextRequest) {
         .from('reservations')
         .select('payment_key')
         .eq('id', reservationId)
+        .eq('user_id', authUser.id)
         .single();
 
       if (reservation?.payment_key) {
@@ -109,6 +114,15 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(req: NextRequest) {
   try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: authUser },
+      error: authError,
+    } = await supabase.auth.getUser();
+    if (authError || !authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = req.nextUrl.searchParams;
     const reservationId = searchParams.get('reservationId');
 
@@ -116,6 +130,20 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         { error: 'Missing reservationId parameter' },
         { status: 400 }
+      );
+    }
+
+    const { data: ownedReservation, error: ownershipError } = await supabase
+      .from('reservations')
+      .select('id')
+      .eq('id', reservationId)
+      .eq('user_id', authUser.id)
+      .single();
+
+    if (ownershipError || !ownedReservation) {
+      return NextResponse.json(
+        { error: 'Reservation not found or not owned by current user' },
+        { status: 404 }
       );
     }
 

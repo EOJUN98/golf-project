@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
 
 export const dynamic = 'force-dynamic';
 
 // Record a no-show for a user
 export async function POST(request: NextRequest) {
   try {
+    await requireAdminAccess();
+    const supabase = await createSupabaseServerClient();
+
     const body = await request.json();
     const { action, reservationId, userId } = body;
 
@@ -48,6 +52,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
 
   } catch (err: any) {
+    if (err instanceof Error && (err.message === 'UNAUTHORIZED' || err.message === 'FORBIDDEN')) {
+      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+    }
     console.error('Admin user action error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

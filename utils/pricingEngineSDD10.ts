@@ -1,6 +1,9 @@
 /**
  * SDD-10: Pricing Engine with Data-Driven Discounts
  *
+ * STATUS: FUTURE - Not used in production. Requires tee_time_stats table with 30+ days of data.
+ * Active version: pricingEngine.ts (V1)
+ *
  * Extends V3 pricing engine with:
  * - Historical tee_time_stats integration
  * - Dynamic vacancy/booking rate adjustments
@@ -16,6 +19,7 @@ import type {
   TeeTimeStats,
   SegmentType,
 } from '@/types/sdd10-database';
+import type { Database } from '@/types/database';
 
 // Re-export V3 types for compatibility
 export type { PricingContextV2 as PricingContext } from './pricingEngineV3';
@@ -23,6 +27,7 @@ export type { PricingResultV2 as PricingResult } from './pricingEngineV3';
 
 // Import existing V3 engine
 import { calculatePricingV2 } from './pricingEngineV3';
+import type { PricingContextV2 } from './pricingEngineV3';
 
 // ============================================================================
 // SDD-10 CONFIGURATION
@@ -224,23 +229,38 @@ export function calculatePricingSDD10(input: PricingEngineV2Input): PricingEngin
   const { teeTime, user, weather, stats } = input;
 
   // ===== STEP 1: Run V3 Pricing Engine =====
-  const v3Context = {
-    teeTime,
-    user: user ? {
-      id: 'temp-id',
-      email: 'temp@example.com',
-      segment: user.segment_type,
-      location_lat: user.location_lat,
-      location_lng: user.location_lng,
-    } as any : undefined,
-    weather: weather ? {
+  const normalizedTeeTime: Database['public']['Tables']['tee_times']['Row'] = {
+    id: teeTime.id,
+    golf_club_id: teeTime.golf_club_id,
+    tee_off: teeTime.tee_off,
+    base_price: teeTime.base_price,
+    status: 'OPEN',
+    weather_condition: null,
+    reserved_by: null,
+    reserved_at: null,
+    updated_by: null,
+    updated_at: null,
+  };
+
+  const normalizedUser = user
+    ? ({ segment: user.segment_type } as unknown as Database['public']['Tables']['users']['Row'])
+    : undefined;
+
+  const normalizedWeather = weather
+    ? ({
       id: 1,
       target_date: teeTime.tee_off.split('T')[0],
       target_hour: new Date(teeTime.tee_off).getHours(),
       pop: weather.pop,
       rn1: weather.rn1,
       wsd: weather.wsd,
-    } as any : undefined,
+    } as Database['public']['Tables']['weather_cache']['Row'])
+    : undefined;
+
+  const v3Context: PricingContextV2 = {
+    teeTime: normalizedTeeTime,
+    user: normalizedUser,
+    weather: normalizedWeather,
     userDistanceKm: user?.location_lat && user?.location_lng ?
       calculateDistanceFromClub(user.location_lat, user.location_lng) : undefined,
   };

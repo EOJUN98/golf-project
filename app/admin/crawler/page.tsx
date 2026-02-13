@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { redirect } from 'next/navigation';
 import CrawlerMonitorClient from '@/components/admin/CrawlerMonitorClient';
-import { requireSuperAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
+import { requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +64,35 @@ interface CourseSummary {
 const REGION_ORDER: RegionKey[] = ['충청', '수도권', '강원', '경상', '전라', '제주'];
 const WINDOW_KEYS: WindowKey[] = ['WEEK_BEFORE', 'TWO_DAYS_BEFORE', 'SAME_DAY_MORNING', 'IMMINENT_3H'];
 const LOOKBACK_DAYS = 30;
+
+function getCrawlerSupabaseAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url) {
+    throw new Error('CRAWLER_CONFIG_MISSING:NEXT_PUBLIC_SUPABASE_URL');
+  }
+  if (!serviceRoleKey) {
+    throw new Error('CRAWLER_CONFIG_MISSING:SUPABASE_SERVICE_ROLE_KEY');
+  }
+
+  return createClient(url, serviceRoleKey);
+}
+
+function mapCrawlerLoadError(error: unknown): string {
+  const rawMessage = error instanceof Error ? error.message : '데이터 조회 중 오류가 발생했습니다.';
+
+  if (rawMessage.startsWith('CRAWLER_CONFIG_MISSING:')) {
+    const missingKey = rawMessage.split(':')[1] || '환경변수';
+    return `크롤러 설정 오류: ${missingKey} 가 누락되었습니다. .env.local에 설정 후 서버를 재시작하세요.`;
+  }
+
+  if (rawMessage.includes("Could not find the table 'public.external_price_targets'")) {
+    return '크롤링 테이블이 DB에 없습니다. Supabase 마이그레이션(20260212_*)을 DB에 적용하세요.';
+  }
+
+  return rawMessage;
+}
 
 function createEmptyWindowStats(): Record<WindowKey, WindowStats> {
   return {
@@ -239,18 +268,13 @@ function aggregateCourseSummaries(
 
 export default async function AdminCrawlerPage() {
   try {
-    await requireSuperAdminAccess();
+    await requireAdminAccess();
   } catch (error) {
     if (error instanceof Error && error.message === 'UNAUTHORIZED') {
       redirect('/login?redirect=/admin/crawler');
     }
     redirect('/forbidden');
   }
-
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
 
   const sinceIso = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
@@ -260,6 +284,7 @@ export default async function AdminCrawlerPage() {
   const manualRegionMap = new Map<string, RegionKey>();
 
   try {
+    const supabase = getCrawlerSupabaseAdminClient();
     const [
       { data: targetData, error: targetError },
       { data: snapshotData, error: snapshotError },
@@ -303,7 +328,7 @@ export default async function AdminCrawlerPage() {
       manualRegionMap.set(normalized, mapping.region);
     }
   } catch (error) {
-    loadError = error instanceof Error ? error.message : '데이터 조회 중 오류가 발생했습니다.';
+    loadError = mapCrawlerLoadError(error);
   }
 
   const aggregated = aggregateCourseSummaries(targets, snapshots, manualRegionMap);

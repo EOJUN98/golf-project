@@ -9,6 +9,9 @@ import { login, signup } from './actions';
 
 function LoginPageContent() {
   const searchParams = useSearchParams();
+  const redirectTarget = searchParams.get('redirect');
+  const safeRedirectTarget =
+    redirectTarget && redirectTarget.startsWith('/') ? redirectTarget : '/';
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -92,6 +95,7 @@ function LoginPageContent() {
             {/* Login Form */}
             {activeTab === 'login' && (
               <form action={login} className="space-y-4">
+                <input type="hidden" name="redirectTo" value={safeRedirectTarget} />
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     이메일

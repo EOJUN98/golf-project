@@ -8,20 +8,26 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 import { canUserCancelReservation } from '@/utils/cancellationPolicyV2';
 import { calculateHoursLeft } from '@/utils/reservationDetailHelpers';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = await createSupabaseServerClient();
+    const currentUser = await getCurrentUserWithRoles();
+
+    if (!currentUser) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
     const resolvedParams = await params;
     const reservationId = resolvedParams.id;
 
@@ -32,8 +38,8 @@ export async function GET(
       );
     }
 
-    // Fetch reservation with all relations
-    const { data: reservation, error: reservationError } = await supabase
+    // Fetch reservation with all relations (owner can only read own reservation)
+    let reservationQuery = supabase
       .from('reservations')
       .select(`
         *,
@@ -60,13 +66,19 @@ export async function GET(
           no_show_count
         )
       `)
-      .eq('id', reservationId)
-      .single();
+      .eq('id', reservationId);
+
+    // Super admin/admin can read any reservation
+    if (!currentUser.isSuperAdmin && !currentUser.isAdmin) {
+      reservationQuery = reservationQuery.eq('user_id', currentUser.id);
+    }
+
+    const { data: reservation, error: reservationError } = await reservationQuery.single();
 
     if (reservationError || !reservation) {
       console.error('[GET /api/reservation/:id] Error:', reservationError);
       return NextResponse.json(
-        { success: false, error: 'Reservation not found' },
+        { success: false, error: 'Reservation not found or access denied' },
         { status: 404 }
       );
     }
@@ -119,12 +131,9 @@ export async function GET(
           tee_time_id: reservation.tee_time_id,
           final_price: reservation.final_price,
           discount_breakdown: reservation.discount_breakdown,
-          agreed_penalty: reservation.agreed_penalty,
           payment_status: reservation.payment_status,
           payment_key: reservation.payment_key,
-          order_id: reservation.order_id,
           created_at: reservation.created_at,
-          updated_at: reservation.updated_at,
           status: reservation.status,
           is_imminent_deal: reservation.is_imminent_deal,
           cancelled_at: reservation.cancelled_at,

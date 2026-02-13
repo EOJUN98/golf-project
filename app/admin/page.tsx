@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@supabase/supabase-js';
 import AdminDashboard from '@/components/AdminDashboardNew';
 import { Database } from '@/types/database';
 
@@ -8,6 +8,11 @@ type UserRow = Database['public']['Tables']['users']['Row'];
 export const dynamic = 'force-dynamic';
 
 export default async function AdminPage() {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
   // Server-side Fetching
   const { data: teeTimes } = await supabase
     .from('tee_times')

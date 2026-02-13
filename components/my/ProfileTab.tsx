@@ -15,13 +15,12 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
-  Target,
-  Flag,
   Activity,
   AlertTriangle,
   CheckCircle,
 } from 'lucide-react';
 import type { UserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
+import { RISK_THRESHOLDS } from '@/utils/constants';
 
 type SegmentType = 'PRESTIGE' | 'SMART' | 'CHERRY' | 'FUTURE';
 
@@ -87,14 +86,14 @@ export default function ProfileTab({ user, userStats }: ProfileTabProps) {
 
   // Risk level indicator
   const getRiskIndicator = (riskScore: number) => {
-    if (riskScore < 30) {
+    if (riskScore < RISK_THRESHOLDS.LOW) {
       return {
         label: '우수',
         color: 'text-green-600',
         bg: 'bg-green-100',
         icon: CheckCircle,
       };
-    } else if (riskScore < 60) {
+    } else if (riskScore < RISK_THRESHOLDS.MEDIUM) {
       return {
         label: '보통',
         color: 'text-yellow-600',
@@ -170,9 +169,9 @@ export default function ProfileTab({ user, userStats }: ProfileTabProps) {
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div
                 className={`h-2 rounded-full ${
-                  (user.no_show_risk_score || 0) < 30
+                  (user.no_show_risk_score || 0) < RISK_THRESHOLDS.LOW
                     ? 'bg-green-600'
-                    : (user.no_show_risk_score || 0) < 60
+                    : (user.no_show_risk_score || 0) < RISK_THRESHOLDS.MEDIUM
                     ? 'bg-yellow-600'
                     : 'bg-red-600'
                 }`}
@@ -280,7 +279,7 @@ export default function ProfileTab({ user, userStats }: ProfileTabProps) {
       )}
 
       {/* No stats placeholder */}
-      {!stats || stats.total_rounds === 0 && (
+      {(!stats || stats.total_rounds === 0) && (
         <div className="bg-gray-50 rounded-2xl p-8 text-center">
           <Trophy size={48} className="text-gray-400 mx-auto mb-3" />
           <h3 className="text-lg font-bold text-gray-900 mb-2">라운드 기록이 없습니다</h3>

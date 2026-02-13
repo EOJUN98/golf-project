@@ -7,9 +7,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { UserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
-import { supabaseClient } from '@/lib/supabase/client';
+import { logout } from '@/app/login/actions';
 import { User, LogOut, Calendar, Shield } from 'lucide-react';
 
 interface HeaderClientProps {
@@ -17,13 +16,13 @@ interface HeaderClientProps {
 }
 
 export default function HeaderClient({ user }: HeaderClientProps) {
-  const router = useRouter();
-
-  const handleLogout = async () => {
-    await supabaseClient.auth.signOut();
-    router.push('/');
-    router.refresh();
-  };
+  const roleLabel = !user
+    ? ''
+    : (user.isSuperAdmin || user.isAdmin)
+      ? 'ADMIN'
+      : user.isClubAdmin
+        ? 'CLUB ADMIN'
+        : 'MEMBER';
 
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
@@ -40,7 +39,7 @@ export default function HeaderClient({ user }: HeaderClientProps) {
               <>
                 {/* My Reservations */}
                 <Link
-                  href="/reservations"
+                  href="/my/reservations"
                   className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-green-600 transition-colors"
                 >
                   <Calendar size={18} />
@@ -54,32 +53,26 @@ export default function HeaderClient({ user }: HeaderClientProps) {
                     className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors"
                   >
                     <Shield size={18} />
-                    <span className="hidden sm:inline">Admin</span>
+                    <span className="hidden sm:inline">관리자 콘솔</span>
                   </Link>
                 )}
 
                 {/* User Menu */}
                 <div className="flex items-center gap-3 pl-3 border-l border-gray-200">
-                  <div className="hidden sm:block text-right">
-                    <p className="text-sm font-medium text-gray-900">
-                      {user.name || user.email}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {user.isSuperAdmin && 'SUPER ADMIN'}
-                      {user.isAdmin && !user.isSuperAdmin && 'ADMIN'}
-                      {user.isClubAdmin && !user.isSuperAdmin && !user.isAdmin && 'CLUB ADMIN'}
-                      {!user.isSuperAdmin && !user.isAdmin && !user.isClubAdmin && '일반 회원'}
-                    </p>
+                  <div className="hidden sm:flex items-center px-3 py-1.5 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
+                    {roleLabel}
                   </div>
 
-                  <button
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-red-600 transition-colors"
-                    title="로그아웃"
-                  >
-                    <LogOut size={18} />
-                    <span className="hidden sm:inline">로그아웃</span>
-                  </button>
+                  <form action={logout}>
+                    <button
+                      type="submit"
+                      className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:text-red-600 transition-colors"
+                      title="로그아웃"
+                    >
+                      <LogOut size={18} />
+                      <span className="hidden sm:inline">로그아웃</span>
+                    </button>
+                  </form>
                 </div>
               </>
             ) : (

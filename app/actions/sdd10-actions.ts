@@ -11,13 +11,13 @@
 'use server';
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import type { Database } from '@/types/database';
 import type {
   CreateVirtualReservationInput,
   CreateVirtualReservationResult,
   CalculateRiskScoreInput,
   CalculateRiskScoreResult,
   RiskFactors,
-  ReservationRiskAssessment,
   SegmentType,
 } from '@/types/sdd10-database';
 
@@ -315,13 +315,14 @@ export async function createVirtualReservation(
 
     // ===== STEP 6: Update User Stats =====
     // Update booking count and spending
-    await supabase.rpc('increment_user_stats', {
+    const { error: statsError } = await supabase.rpc('increment_user_stats', {
       p_user_id: input.user_id,
       p_booking_amount: input.final_price,
-    }).catch(err => {
-      // Non-critical, just log
-      console.warn('[createVirtualReservation] Stats update failed:', err);
     });
+    if (statsError) {
+      // Non-critical, just log
+      console.warn('[createVirtualReservation] Stats update failed:', statsError);
+    }
 
     return {
       success: true,
@@ -360,6 +361,7 @@ export async function recalculateUserSegment(userId: string): Promise<{
 }> {
   try {
     const supabase = await createSupabaseServerClient();
+    const segmentTypes: SegmentType[] = ['PRESTIGE', 'SMART', 'CHERRY', 'FUTURE'];
 
     // Call database function
     const { data, error } = await supabase
@@ -374,11 +376,19 @@ export async function recalculateUserSegment(userId: string): Promise<{
       };
     }
 
+    const oldSegment = segmentTypes.includes(data.old_segment as SegmentType)
+      ? (data.old_segment as SegmentType)
+      : undefined;
+    const newSegmentRaw = data.new_segment || data.segment_type;
+    const newSegment = segmentTypes.includes(newSegmentRaw as SegmentType)
+      ? (newSegmentRaw as SegmentType)
+      : undefined;
+
     return {
       success: true,
-      old_segment: data.old_segment,
-      new_segment: data.new_segment || data.segment_type,
-      segment_score: data.segment_score,
+      old_segment: oldSegment,
+      new_segment: newSegment,
+      segment_score: data.segment_score ?? undefined,
     };
   } catch (error) {
     console.error('[recalculateUserSegment] Exception:', error);
@@ -399,7 +409,7 @@ export async function recalculateUserSegment(userId: string): Promise<{
  */
 export async function aggregateTeeTimeStats(teeTimeId: number): Promise<{
   success: boolean;
-  stats?: any;
+  stats?: Database['public']['Tables']['tee_time_stats']['Insert'];
   error?: string;
 }> {
   try {
@@ -453,21 +463,34 @@ export async function aggregateTeeTimeStats(teeTimeId: number): Promise<{
       };
     }
 
-    // Calculate statistics
-    const totalSlots = similarSlots?.length || 0;
-    const bookedSlots = similarSlots?.filter(s => s.status === 'BOOKED').length || 0;
-    const cancelledCount = similarSlots?.reduce((sum, slot) => {
-      return sum + ((slot.reservations as any[])?.filter(r => r.cancelled_at).length || 0);
-    }, 0) || 0;
-    const noShowCount = similarSlots?.reduce((sum, slot) => {
-      return sum + ((slot.reservations as any[])?.filter(r => r.no_show_marked_at).length || 0);
-    }, 0) || 0;
+    type ReservationAggregate = {
+      final_price: number;
+      cancelled_at: string | null;
+      no_show_marked_at: string | null;
+    };
 
-    const avgFinalPrice = similarSlots?.reduce((sum, slot) => {
-      const prices = (slot.reservations as any[])?.map(r => r.final_price) || [];
+    type SimilarSlot = {
+      status: Database['public']['Tables']['tee_times']['Row']['status'];
+      reservations: ReservationAggregate[] | null;
+    };
+
+    const slotList = (similarSlots || []) as unknown as SimilarSlot[];
+
+    // Calculate statistics
+    const totalSlots = slotList.length;
+    const bookedSlots = slotList.filter(slot => slot.status === 'BOOKED').length;
+    const cancelledCount = slotList.reduce((sum, slot) => {
+      return sum + (slot.reservations?.filter(reservation => reservation.cancelled_at).length || 0);
+    }, 0);
+    const noShowCount = slotList.reduce((sum, slot) => {
+      return sum + (slot.reservations?.filter(reservation => reservation.no_show_marked_at).length || 0);
+    }, 0);
+
+    const avgFinalPrice = slotList.reduce((sum, slot) => {
+      const prices = slot.reservations?.map(reservation => reservation.final_price) || [];
       const avg = prices.length > 0 ? prices.reduce((a, b) => a + b, 0) / prices.length : 0;
       return sum + avg;
-    }, 0) || 0;
+    }, 0);
 
     const stats = {
       tee_time_id: teeTimeId,

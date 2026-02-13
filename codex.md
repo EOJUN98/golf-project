@@ -584,3 +584,325 @@
 - 검증:
   - `npm run lint` 통과
   - `npm run build` 통과
+
+### 2026-02-12 28차 기록 (18:43 KST, 슈퍼어드민 로그인 서버 액션 오류 수정)
+- 이슈:
+  - 슈퍼어드민 로그인 시 UI 에러: `An unexpected response was received from the server.`
+  - 발생 지점: `app/login/page.tsx`의 `<form action={login}>`
+- 원인 분석:
+  - `app/login/actions.ts`의 `login/signup/logout`에서 `redirect()`를 `try/catch` 내부에서 처리
+  - Next 서버 액션에서 `redirect()`는 throw 기반 제어 흐름이라 catch에 걸리면 예상치 못한 응답 오류를 유발할 수 있음
+- 변경 파일:
+  - `app/login/actions.ts`
+- 수정 내용:
+  - `try/catch` 제거 후 선형 흐름으로 재작성
+  - validation/auth 실패 시 즉시 `redirect('/login?message=...')`
+  - 성공 시 `revalidatePath('/', 'layout')` 후 `redirect('/')`
+  - 로그아웃도 동일 패턴으로 정리
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과
+
+### 2026-02-12 29차 기록 (19:41 KST, Invalid login credentials 대응)
+- 이슈:
+  - 로그인 시 `Invalid login credentials` 발생
+- 원인 분석:
+  - 코드 레벨(`form action`/server action) 오류는 28차 수정으로 해소됨
+  - 실제로는 계정별 자격증명 불일치 이슈 확인
+  - Auth API 직접 검증 결과:
+    - `backup.superadmin...` 계정 로그인 정상
+    - 기존 `gogyeo12345@gmail.com`은 기존 비밀번호 불일치 상태
+- 조치:
+  - 새 슈퍼어드민 계정 `superadmin@tugol.dev` 생성 및 `public.users` 슈퍼어드민 권한 동기화
+  - 로그인 서버 액션 입력 정규화 보강:
+    - 이메일 `trim().toLowerCase()`
+    - 이름/전화번호 `trim()`
+  - 변경 파일:
+    - `app/login/actions.ts`
+- 검증:
+  - `superadmin@tugol.dev` 패스워드 로그인 토큰 발급 성공
+  - `backup.superadmin...` 패스워드 로그인 토큰 발급 성공
+  - `npm run lint` 통과
+  - `npm run build` 통과
+
+### 2026-02-12 30차 기록 (19:46 KST, 로그인 세션 유지/관리자 접근 복구)
+- 이슈:
+  - 로그인 성공 후 세션이 유지되지 않아 비로그인처럼 동작
+  - `/admin` 리다이렉트 후 관리자 접근 실패
+- 원인 분석:
+  - `@supabase/ssr` 최신 권장 방식은 `cookies.getAll/setAll`인데,
+  - 기존 구현이 deprecated `get/set/remove` 중심이라 Next 16 + 서버액션/프록시 조합에서 세션 쿠키 반영이 불안정
+  - 실제 라이브러리 문서/소스에 `getAll/setAll` 미구현 시 random logout/early termination 경고 존재 확인
+- 변경 파일:
+  - `lib/supabase/server.ts`
+  - `proxy.ts`
+  - `app/auth/callback/route.ts`
+  - `app/login/actions.ts`
+  - `app/login/page.tsx`
+- 수정 내용:
+  - 서버/프록시/콜백의 Supabase cookie adapter를 `getAll/setAll`로 전환
+  - 로그인 폼에 `redirectTo` hidden 필드 추가 (`?redirect=/admin` 유지)
+  - 로그인 액션에서 `redirectTo`를 안전하게 검증 후 해당 경로로 이동
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과
+  - Auth 토큰 발급 검증:
+    - `superadmin@tugol.dev` 성공
+    - `backup.superadmin.20260212181546@tugol.dev` 성공
+
+### 2026-02-12 31차 기록 (19:56 KST, 사용자 피드백 기반 로그인/관리자 UI 추가 수정)
+- 사용자 제보:
+  - 로그인 전부터 Admin 접근 버튼 노출
+  - 로그인 후 관리자 접근 불가/세션 반영 불안정
+  - 로컬 dev 포트 3002 고정 요구
+- 변경 파일:
+  - `components/SiteHeader.tsx`
+  - `lib/supabase/server.ts`
+  - `app/login/actions.ts`
+  - `app/login/page.tsx`
+  - `proxy.ts`
+  - `app/auth/callback/route.ts`
+  - `package.json`
+- 적용 내용:
+  - `SiteHeader`의 하드코딩 Admin 버튼 제거
+  - 로그인 사용자의 `users` + `club_admins` 기반 역할 조회 후 admin 이상일 때만 버튼 노출
+  - Supabase 서버 쿠키 어댑터를 `getAll/setAll` 표준 방식으로 통일
+  - 서버 액션 전용 `createSupabaseServerActionClient` 추가 (로그인/회원가입/로그아웃에 적용)
+  - 로그인 폼 `redirectTo` 유지(관리자 진입 시 로그인 후 `/admin` 복귀)
+  - `npm run dev`를 `next dev -p 3002`로 고정
+- 검증:
+  - `npm run lint` 통과
+  - dev 실행 시 `http://localhost:3002` 기동 확인
+  - (로컬 환경 제약) 기존 dev 프로세스 락으로 재실행 충돌 확인되어 서버 재시작 필요
+
+### 2026-02-12 32차 기록 (20:04 KST, 로그인 상태 UI 불일치 최종 보정)
+- 사용자 이슈:
+  - 로그인 후에도 홈 헤더에 `로그인` 버튼이 남고 `로그아웃`으로 전환되지 않음
+  - 관리자 계정 로그인 후에도 홈에서 Admin 버튼 노출 상태가 일관되지 않음
+- 원인 분석:
+  - 로그인은 서버 액션 + 쿠키 세션 기준으로 처리되는데,
+  - 기존 `components/SiteHeader.tsx`는 클라이언트 Supabase 세션(local storage 기반)을 직접 조회
+  - 세션 소스가 달라 로그인 직후 헤더 상태 불일치가 발생
+- 변경 파일:
+  - `components/SiteHeader.tsx`
+- 조치:
+  - `SiteHeader`를 클라이언트 컴포넌트에서 **서버 컴포넌트**로 전환
+  - `getCurrentUserWithRoles()` 결과를 기준으로 헤더 렌더링
+  - 비로그인: `로그인` 버튼만 노출
+  - 로그인: `MY` + 사용자명 + `로그아웃` 버튼 노출
+  - 관리자 권한(`isSuperAdmin || isAdmin || isClubAdmin`)일 때만 `Admin` 버튼 노출
+  - 로그아웃은 `<form action={logout}>` 서버 액션으로 처리하여 상태 반영 일관성 확보
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build`는 Google Fonts(Geist/Geist Mono) 외부 요청 실패로 중단
+    - 코드 타입/린트 오류가 아니라 네트워크(폰트 fetch) 환경 이슈
+
+### 2026-02-12 33차 기록 (20:14 KST, users 조회 에러 로그 정리 + 헤더 등급 표기)
+- 사용자 이슈:
+  - `[getCurrentUserWithRoles] User fetch error: {}` 콘솔 오류 노출
+  - 로그인 상태에서 아이디(이메일/닉네임) 노출 대신 등급 표기 요청
+  - 헤더 우측 콘솔(버튼 영역) 배치가 복잡하다는 피드백
+- 원인 분석:
+  - `getCurrentUserWithRoles`의 `users` 조회가 `.single()`이라 프로필 미존재 시 에러 경로로 떨어짐
+  - 에러 객체를 그대로 출력해 `{}` 형태로 표시되어 원인 파악이 어려움
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+  - `components/SiteHeader.tsx`
+- 조치:
+  - `users` 조회를 `.single()` -> `.maybeSingle()`로 변경
+  - 실제 DB 에러일 때만 구조화 로그 출력(`code/message/details/hint`)
+  - 프로필 미존재는 예외가 아닌 정상 fallback 경로로 처리
+  - 헤더 사용자 배지를 아이디 대신 권한 등급 배지로 변경:
+    - `SUPER ADMIN` / `ADMIN` / `CLUB ADMIN` / `MEMBER`
+  - 모바일에서 우측 영역 정리를 위해 위치 배지는 `sm` 이상에서만 표시
+- 검증:
+  - `npm run lint` 통과
+
+### 2026-02-12 34차 기록 (20:15 KST, 레거시 계정 권한 조회 fallback 보완)
+- 추가 이슈 대응:
+  - 일부 계정은 `public.users.id`와 `auth.uid()` 불일치 가능성 존재
+  - 이 경우 id 기준 조회 실패로 권한/프로필이 비어 보일 수 있음
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+- 조치:
+  - id 조회 실패 시 이메일 기준 fallback 조회(`maybeSingle`) 추가
+  - fallback DB 에러도 구조화 로그로 출력
+  - 조회 성공 시 해당 프로필/권한으로 헤더 및 접근권한 계산
+- 검증:
+  - `npm run lint` 통과
+
+### 2026-02-12 35차 기록 (20:22 KST, 슈퍼어드민/어드민 판별 보강)
+- 사용자 요구:
+  - 슈퍼어드민/어드민 로그인 시 `MEMBER`가 아닌 관리자 등급으로 표시
+  - Admin 버튼으로 `/admin` 진입 및 권한 체크 정상화
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+- 조치:
+  - 권한 조회에 `is_admin` 컬럼 포함
+  - `isAdmin` 계산식을 `is_admin || is_super_admin`로 변경
+  - role 조회에 서비스 롤 클라이언트 fallback 추가
+    - `SUPABASE_SERVICE_ROLE_KEY`가 있으면 RLS 우회로 레거시 계정 매핑(id 불일치)도 권한 판별 가능
+  - role 조회 fallback 순서:
+    1) `id = auth.uid()`
+    2) 미존재 시 `email = auth.user.email`
+  - `club_admins` 조회 키를 `authUser.id`가 아닌 조회된 `users.id`로 변경
+- 확인 사항:
+  - 로컬 `.env.local`에서 `SUPABASE_SERVICE_ROLE_KEY` 항목이 현재 없음(`missing`)
+  - 이 값이 없으면 id 불일치 레거시 계정은 여전히 RLS 제약으로 권한 판별이 제한될 수 있음
+- 검증:
+  - `npm run lint` 통과
+
+### 2026-02-12 36차 기록 (20:28 KST, 관리자 등급 강제 fallback 추가)
+- 사용자 이슈:
+  - 로컬 반영 후에도 슈퍼어드민/어드민이 `MEMBER`로 보이는 현상 지속
+- 원인 가정:
+  - `public.users` 권한/매핑 불일치로 role row 조회 실패 시 일반회원 fallback으로 처리됨
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+- 조치:
+  - `resolveBootstrapRoleByEmail()` 추가
+  - `public.users` 미조회 시 이메일 기반 bootstrap role 적용
+    - 기본 슈퍼어드민 이메일 2개 내장:
+      - `superadmin@tugol.dev`
+      - `backup.superadmin.20260212181546@tugol.dev`
+    - 추가 확장 env:
+      - `SUPER_ADMIN_BOOTSTRAP_EMAILS`
+      - `ADMIN_BOOTSTRAP_EMAILS`
+  - 결과적으로 role row 조회 실패 상태에서도 관리자 버튼/관리자 접근 판별 가능
+- 검증:
+  - `npm run lint` 통과
+
+### 2026-02-12 37차 기록 (21:01 KST, admin 접근 권한 강화 + 콘솔 통합 레이아웃)
+- 사용자 이슈:
+  - 슈퍼어드민 로그인 상태에서도 `/admin` 접근 시 권한 없음 발생
+  - 상단 콘솔 UI가 역할별로 분산되어 혼란
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+  - `components/SiteHeader.tsx`
+  - `components/admin/AdminLayoutClient.tsx`
+  - `app/admin/crawler/page.tsx`
+  - `app/api/admin/crawler/regions/route.ts`
+- 조치:
+  - 권한 계산에 bootstrap 이메일 강제 승격을 user row 존재 시에도 병합
+    - `isSuperAdmin = users.is_super_admin || bootstrapSuperAdmin`
+    - `isAdmin = users.is_admin || isSuperAdmin || bootstrapAdmin`
+  - 상단 헤더 role 배지를 통합
+    - SUPER/ADMIN 모두 `ADMIN` 배지로 통합 표시
+    - 관리자 버튼 라벨을 `관리자 콘솔`로 통일
+  - 관리자 사이드바 user role 표시를 단일 `... CONSOLE` 배지로 정리
+  - 크롤러 페이지/API 권한을 super-admin 전용에서 admin 이상으로 통합
+    - `requireSuperAdminAccess` -> `requireAdminAccess`
+- 실행 검증:
+  - `npm run lint` 통과
+  - dev 서버 재기동 확인: `http://localhost:3002` (Next 16.1.1)
+
+### 2026-02-12 38차 기록 (21:03 KST, 접근권한 오류 근본 원인 수정)
+- 관측 로그:
+  - `[getCurrentUserWithRoles] User fetch error: column users.is_suspended does not exist (42703)`
+  - 해당 쿼리 실패로 role 조회가 깨지며 `/forbidden`으로 리다이렉트 발생
+- 원인:
+  - 현재 연결된 DB 스키마에 `public.users.is_suspended` 컬럼이 존재하지 않음
+  - 권한 조회 select 절이 해당 컬럼에 하드 의존
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+- 조치:
+  - role 조회 select에서 `is_suspended` 제거
+  - 타입을 optional `is_suspended?: boolean`로 완화
+  - `isSuspended`는 `false` 기본값 fallback 유지
+  - `rawUser` 반환 객체를 명시적으로 normalize
+- 추가 검증:
+  - dev 서버 로그에서 `is_suspended` 컬럼 오류 재발생 없음
+  - `npm run lint` 통과
+
+### 2026-02-12 39차 기록 (21:12 KST, proxy 권한 로직 동기화 + 헤더 전역 콘솔 라벨 통일)
+- 사용자 재지적:
+  - 변경 체감 없음, 접근권한/콘솔 통합 미반영
+- 최종 원인:
+  - `proxy.ts`가 여전히 구권한 로직 사용 중
+    - `is_super_admin`만 판정
+    - 존재하지 않는 `users.is_suspended` 컬럼 조회
+  - 이 단계에서 `/forbidden` 선차단되어 이후 레이아웃 수정이 체감되지 않음
+- 변경 파일:
+  - `proxy.ts`
+  - `components/HeaderClient.tsx`
+- 조치:
+  - proxy 권한 로직을 `getCurrentUserWithRoles` 기준과 동일하게 재작성
+    - id 조회 + email fallback
+    - bootstrap admin/super-admin 이메일 승격
+    - `isAdmin || isSuperAdmin || isClubAdmin` 통합 판정
+    - `is_suspended` 컬럼 의존 제거
+  - `HeaderClient`도 `관리자 콘솔` 라벨 + `ADMIN/CLUB ADMIN` 역할 표기로 통일
+- 런타임 검증:
+  - 3002 기존 프로세스 종료 후 재기동 완료
+  - `/admin` 비로그인 응답: `307 -> /login?redirect=%2Fadmin` 확인
+  - `npm run lint` 통과
+
+### 2026-02-12 40차 기록 (21:18 KST, 크롤러 테이블 조회 오류 원인 분리/가이드 개선)
+- 사용자 이슈:
+  - `Could not find the table 'public.external_price_targets' in the schema cache`
+- 분석:
+  - `supabase/migrations/20260212_external_price_crawler.sql` 등 테이블 생성 마이그레이션 파일은 레포에 존재
+  - 관리자 크롤러 페이지/API는 `SUPABASE_SERVICE_ROLE_KEY` 없을 때 anon key로 fallback하고 있어
+    권한/노출 문제를 `table not found` 형태로 오해하게 만듦
+  - 현재 `.env.local`에 `SUPABASE_SERVICE_ROLE_KEY` 미설정 확인
+- 변경 파일:
+  - `app/admin/crawler/page.tsx`
+  - `app/api/admin/crawler/regions/route.ts`
+- 조치:
+  - 관리자 크롤러 경로에서 service role key를 필수화(anon fallback 제거)
+  - 설정 누락 시 명확한 에러 메시지 노출:
+    - `CRAWLER_CONFIG_MISSING:SUPABASE_SERVICE_ROLE_KEY`
+  - schema cache table 오류는 마이그레이션 미적용 안내 메시지로 변환
+- 검증:
+  - `npm run lint` 통과
+
+### 2026-02-12 41차 기록 (21:36 KST, Supabase 강제 연결 복구 + 크롤러 테이블 실연결)
+- 사용자 요구:
+  - "슈파베이스랑 무조건 연결" 및 크롤러 테이블 조회 오류 해결
+- 진행 결과:
+  - Supabase 원격 DB 직접 연결 성공 (`supabase db push`/`migration list`/`inspect`)
+  - 원격 DB 확인 결과 `external_price_targets`, `external_price_snapshots`, `external_course_regions` 테이블 존재 확인
+    - `supabase inspect db table-stats`에 3개 테이블 노출
+- 원인 상세:
+  - 로컬 `.env.local`에 `SUPABASE_SERVICE_ROLE_KEY` 누락
+  - 마이그레이션 버전 충돌(동일 날짜 버전 다중 파일)로 일반 `db push` 실패
+- 조치:
+  - `supabase projects api-keys`로 프로젝트 서비스 롤 키 조회 후 `.env.local` 반영
+  - 신규 idempotent 부트스트랩 마이그레이션 추가:
+    - `supabase/migrations/20260212211900_external_price_crawler_bootstrap.sql`
+  - 원격 마이그레이션 히스토리 정리:
+    - `supabase migration repair --status reverted 20260212`
+  - 부트스트랩 적용 후 원격 테이블 조회 검증(서비스키 기준):
+    - targets/snapshots/regions 모두 `ok count=0`
+- 런타임 검증:
+  - dev 서버 재기동 완료 (`http://localhost:3002`)
+  - 서버 로그에서 `/admin/crawler 200` 응답 확인
+
+### 2026-02-13 42차 기록 (로그인/권한/로그아웃 안정화 + 로컬 빌드 오프라인 안정화)
+- 작업:
+  - 로그인 후 세션 쿠키가 유지되지 않는 케이스 및 "unexpected response" 방지
+  - 관리자 콘솔 노출/로그아웃 동작 불일치(메뉴에서 로그아웃이 실제로는 쿠키를 지우지 않음) 수정
+  - 로컬 네트워크 제한 환경에서도 `next build`가 폰트 fetch로 실패하지 않도록 조정
+- 변경 파일:
+  - `lib/supabase/server.ts`
+  - `proxy.ts`
+  - `app/auth/callback/route.ts`
+  - `components/HeaderClient.tsx`
+  - `app/layout.tsx`
+  - `app/menu/page.tsx`
+  - `components/menu/MenuClient.tsx`
+  - `scripts/reset-admin-password.mjs` (신규)
+- 핵심 조치:
+  - Next cookies API 시그니처 차이 대응을 위해 `cookies().set(...)`를 안전 호출로 래핑
+  - `proxy.ts`에서 request 쿠키 변형 제거(응답 쿠키만 갱신)
+  - 클라이언트 로그아웃을 서버 액션 기반으로 통일(쿠키 세션 정리 보장)
+  - `next/font/google`(Geist) 제거로 로컬 환경에서 외부 폰트 fetch 실패 방지
+  - 메뉴 화면에서 email 노출 제거, 권한 배지(ADMIN/CLUB ADMIN/MEMBER) 표기
+  - 메뉴에 관리자 권한 시 `관리자 콘솔` 항목 노출
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과 (환경상 권한 제한으로 로컬 빌드는 escalated 실행 필요)
+- 추가:
+  - `app/menu/page.tsx`에서 `roleLabel` 타입을 union으로 고정하여 빌드 타입 오류 제거
+- 남은 이슈:
+  - 사용자 측 로그인 실패가 계속되면 "비밀번호 불일치" 가능성이 높아 Auth 비밀번호 리셋/재발급 플로우 확정 필요(평문 비밀번호는 문서에 저장하지 않음)

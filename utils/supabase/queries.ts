@@ -4,6 +4,32 @@ import { Database } from '@/types/database';
 
 type TeeTimeStatus = Database['public']['Tables']['tee_times']['Row']['status'];
 type UserSegment = Database['public']['Tables']['users']['Row']['segment'];
+type TeeTimeWeather = TeeTimeWithPricing['weather'];
+
+function normalizeWeather(
+  weatherCondition: Database['public']['Tables']['tee_times']['Row']['weather_condition']
+): TeeTimeWeather {
+  if (weatherCondition && typeof weatherCondition === 'object' && !Array.isArray(weatherCondition)) {
+    const skyValue = typeof weatherCondition.sky === 'string' ? weatherCondition.sky : '맑음';
+    const temperatureValue = typeof weatherCondition.temperature === 'number' ? weatherCondition.temperature : 20;
+    const rainProbValue = typeof weatherCondition.rainProb === 'number' ? weatherCondition.rainProb : 0;
+    const windSpeedValue = typeof weatherCondition.windSpeed === 'number' ? weatherCondition.windSpeed : 0;
+
+    return {
+      sky: skyValue,
+      temperature: temperatureValue,
+      rainProb: rainProbValue,
+      windSpeed: windSpeedValue,
+    };
+  }
+
+  return {
+    sky: '맑음',
+    temperature: 20,
+    rainProb: 0,
+    windSpeed: 0,
+  };
+}
 
 export interface TeeTimeWithPricing {
   id: number;
@@ -21,7 +47,7 @@ export interface TeeTimeWithPricing {
     windSpeed: number;
   };
   teeOffTime: Date;
-  discountResult?: any;
+  discountResult?: unknown;
 }
 
 export async function getTeeTimesByDate(
@@ -51,7 +77,7 @@ export async function getTeeTimesByDate(
 
     // 2. If user is logged in, fetch their segment from database
     if (sessionUser?.id) {
-      const { data: dbUser, error: userError } = await (supabase as any)
+      const { data: dbUser, error: userError } = await supabase
         .from('users')
         .select('*')
         .eq('id', sessionUser.id)
@@ -85,7 +111,7 @@ export async function getTeeTimesByDate(
     return [];
   }
 
-  return teeTimes.map((teeTime: any) => {
+  return teeTimes.map((teeTime) => {
     // Build pricing context
     const ctx: PricingContext = {
       teeTime,
@@ -104,6 +130,9 @@ export async function getTeeTimesByDate(
         name: null,
         phone: null,
         segment: finalUserSegment,
+        segment_type: finalUserSegment,
+        segment_score: 0,
+        segment_calculated_at: new Date().toISOString(),
         cherry_score: 0,
         terms_agreed_at: null,
         created_at: new Date().toISOString(),
@@ -113,7 +142,11 @@ export async function getTeeTimesByDate(
         blacklisted_at: null,
         blacklisted_by: null,
         no_show_count: 0,
+        no_show_risk_score: 0,
+        consecutive_no_shows: 0,
         last_no_show_at: null,
+        total_cancellations: 0,
+        cancellation_rate: 0,
         total_bookings: 0,
         total_spent: 0,
         avg_booking_value: 0,
@@ -126,6 +159,7 @@ export async function getTeeTimesByDate(
         last_visited_at: null,
         segment_override_by: null,
         segment_override_at: null,
+        segment_override_reason: null,
         marketing_agreed: false,
         push_agreed: false,
         is_admin: false,
@@ -147,12 +181,7 @@ export async function getTeeTimesByDate(
     }
 
     // Extract weather display (from DB or default)
-    const weather = teeTime.weather_condition || {
-      sky: '맑음',
-      temperature: 20,
-      rainProb: 0,
-      windSpeed: 0,
-    };
+    const weather = normalizeWeather(teeTime.weather_condition);
 
     return {
       id: teeTime.id,

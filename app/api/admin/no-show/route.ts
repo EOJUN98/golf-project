@@ -7,38 +7,23 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
 import { markNoShow } from '@/utils/cancellationPolicyV2';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export async function POST(req: NextRequest) {
   try {
+    await requireAdminAccess();
+    const supabase = await createSupabaseServerClient();
+
     const body = await req.json();
-    const { reservationId, adminUserId } = body;
+    const { reservationId } = body;
 
     // Validate input
-    if (!reservationId || !adminUserId) {
+    if (!reservationId) {
       return NextResponse.json(
-        { error: 'Missing required fields: reservationId, adminUserId' },
+        { error: 'Missing required field: reservationId' },
         { status: 400 }
-      );
-    }
-
-    // Verify admin permissions
-    const { data: adminUser, error: adminError } = await supabase
-      .from('users')
-      .select('is_admin, is_super_admin')
-      .eq('id', adminUserId)
-      .single();
-
-    if (adminError || !adminUser?.is_admin) {
-      return NextResponse.json(
-        { error: 'Unauthorized: Admin access required' },
-        { status: 403 }
       );
     }
 
@@ -58,6 +43,9 @@ export async function POST(req: NextRequest) {
       userSuspended: result.userSuspended
     });
   } catch (error) {
+    if (error instanceof Error && (error.message === 'UNAUTHORIZED' || error.message === 'FORBIDDEN')) {
+      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+    }
     console.error('[POST /api/admin/no-show] Error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -72,6 +60,9 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(req: NextRequest) {
   try {
+    await requireAdminAccess();
+    const supabase = await createSupabaseServerClient();
+
     const searchParams = req.nextUrl.searchParams;
     const date = searchParams.get('date') || new Date().toISOString().slice(0, 10);
 
@@ -138,6 +129,9 @@ export async function GET(req: NextRequest) {
       reservations: candidatesForNoShow
     });
   } catch (error) {
+    if (error instanceof Error && (error.message === 'UNAUTHORIZED' || error.message === 'FORBIDDEN')) {
+      return NextResponse.json({ error: 'Unauthorized: Admin access required' }, { status: 403 });
+    }
     console.error('[GET /api/admin/no-show] Error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },

@@ -406,9 +406,9 @@ export default function ReservationDetailClient({
               </button>
               <button
                 onClick={() => {
-                  // TODO: Implement cancellation logic
-                  alert('취소 기능은 추후 구현 예정');
+                  // TODO: Implement cancellation API call
                   setShowCancelModal(false);
+                  router.push('/my/reservations');
                 }}
                 className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700"
               >

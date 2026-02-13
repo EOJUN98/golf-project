@@ -10,7 +10,7 @@ interface BookingModalProps {
   isOpen: boolean;
   onClose: () => void;
   teeTime: TeeTimeWithPricing; // ✅ 타입 통일
-  userId?: number;
+  userId?: string;
   userSegment?: string;
   onSuccess?: () => void;
 }
@@ -19,18 +19,19 @@ export default function BookingModal({
   isOpen,
   onClose,
   teeTime,
-  userId = 1,
+  userId,
   userSegment = 'SMART',
   onSuccess,
 }: BookingModalProps) {
-  const paymentWidgetRef = useRef<any>(null);
+  const paymentWidgetRef = useRef<Awaited<ReturnType<typeof loadPaymentWidget>> | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // ✅ 데이터 변환: DB에서 온 데이터(teeTime)를 화면에 뿌리기 좋게 변수에 담음
   // 1. 가격 (finalPrice가 없으면 price 사용)
-  const finalPrice = teeTime.finalPrice || (teeTime as any).price || 0;
-  const basePrice = teeTime.basePrice || (teeTime as any).price || 0;
+  const legacyPrice = (teeTime as TeeTimeWithPricing & { price?: number }).price || 0;
+  const finalPrice = teeTime.finalPrice || legacyPrice;
+  const basePrice = teeTime.basePrice || legacyPrice;
   
   // 2. 날짜 (ISO String -> Date 객체 변환)
   const teeDate = new Date(teeTime.tee_off);
@@ -99,7 +100,7 @@ export default function BookingModal({
     }
 
     try {
-      const orderId = `ORD-${Date.now()}-${userId}-${teeTime.id}`;
+      const orderId = `ORD-${Date.now()}-${userId || 'guest'}-${teeTime.id}`;
 
       // 결제 성공 페이지에서 보여줄 데이터를 세션에 저장 (선택 사항)
       const metadata = {
@@ -121,7 +122,7 @@ export default function BookingModal({
         orderId,
         orderName: `${dateString} ${timeString} 티타임`,
         customerName: userId ? `회원 ${userId}` : '비회원 고객',
-        successUrl: `${window.location.origin}/api/payments/confirm?tee_time_id=${teeTime.id}&user_id=${userId}`,
+        successUrl: `${window.location.origin}/api/payments/confirm?tee_time_id=${teeTime.id}`,
         failUrl: `${window.location.origin}/payment/fail`,
       });
 
@@ -129,7 +130,7 @@ export default function BookingModal({
 
     } catch (err) {
       console.error('Payment request failed:', err);
-      if ((err as any).code === 'USER_CANCEL') return; // 사용자가 창을 닫은 건 에러 아님
+      if ((err as { code?: string }).code === 'USER_CANCEL') return; // 사용자가 창을 닫은 건 에러 아님
       
       setError(
         err instanceof Error ? err.message : '결제 요청에 실패했습니다.'

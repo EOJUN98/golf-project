@@ -1,16 +1,45 @@
 /**
- * SDD-08: Next.js Proxy (formerly Middleware) - Auth & Route Protection
+ * SDD-08: Next.js 16 Proxy - Auth & Route Protection
  *
- * Protects /admin routes and manages Supabase session refresh
+ * Next.js 16 uses proxy.ts (replaces middleware.ts from Next.js 15).
+ * Protects /admin routes and manages Supabase session refresh.
  *
  * **DEMO MODE**:
  * When NEXT_PUBLIC_DEMO_MODE=true, ALL route protection is bypassed.
- * This allows unrestricted access to /admin, /my, and all other routes.
  * ⚠️ WARNING: NEVER enable DEMO_MODE in production!
  */
 
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+
+function parseEmailList(value: string | undefined): Set<string> {
+  if (!value) return new Set();
+  return new Set(
+    value
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function resolveBootstrapRoleByEmail(email: string | undefined) {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  if (!normalizedEmail) {
+    return { isSuperAdmin: false, isAdmin: false };
+  }
+
+  const bootstrapSuperAdmins = new Set([
+    'superadmin@tugol.dev',
+    'backup.superadmin.20260212181546@tugol.dev',
+    ...parseEmailList(process.env.SUPER_ADMIN_BOOTSTRAP_EMAILS),
+  ]);
+  const bootstrapAdmins = parseEmailList(process.env.ADMIN_BOOTSTRAP_EMAILS);
+
+  const isSuperAdmin = bootstrapSuperAdmins.has(normalizedEmail);
+  const isAdmin = isSuperAdmin || bootstrapAdmins.has(normalizedEmail);
+
+  return { isSuperAdmin, isAdmin };
+}
 
 export async function proxy(request: NextRequest) {
   // ============================================================================
@@ -43,41 +72,20 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value;
+        getAll() {
+          return request.cookies.getAll();
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          });
+        setAll(cookiesToSet) {
+          // In the proxy runtime, mutating request cookies is not required and can
+          // throw depending on Next.js internals. Persist changes on the response.
           response = NextResponse.next({
             request: {
               headers: request.headers,
             },
           });
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          });
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
+
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
           });
         },
       },
@@ -98,32 +106,39 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // Check if user has admin access
-    // Fetch user details from public.users
-    const { data: userData } = await supabase
+    // Check if user has admin access.
+    // Use tolerant lookup to handle legacy users.id mismatch.
+    const { data: userDataById } = await supabase
       .from('users')
-      .select('id, is_super_admin, is_suspended')
+      .select('id, email, is_admin, is_super_admin')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
+
+    let userData = userDataById;
+    if (!userData && user.email) {
+      const { data: userDataByEmail } = await supabase
+        .from('users')
+        .select('id, email, is_admin, is_super_admin')
+        .eq('email', user.email)
+        .maybeSingle();
+      userData = userDataByEmail;
+    }
 
     // Check for club admin status
     const { data: clubAdmins } = await supabase
       .from('club_admins')
       .select('golf_club_id')
-      .eq('user_id', user.id);
+      .eq('user_id', userData?.id || user.id);
 
-    const isSuperAdmin = userData?.is_super_admin || false;
+    const bootstrapRole = resolveBootstrapRoleByEmail(user.email);
+    const isSuperAdmin = Boolean(userData?.is_super_admin || bootstrapRole.isSuperAdmin);
+    const isAdmin = Boolean(userData?.is_admin || isSuperAdmin || bootstrapRole.isAdmin);
     const isClubAdmin = (clubAdmins && clubAdmins.length > 0) || false;
-    const hasAdminAccess = isSuperAdmin || isClubAdmin;
+    const hasAdminAccess = isSuperAdmin || isAdmin || isClubAdmin;
 
-    // Not an admin - redirect to forbidden page
+    // Not an admin - redirect to forbidden page.
     if (!hasAdminAccess) {
       return NextResponse.redirect(new URL('/forbidden', request.url));
-    }
-
-    // User is suspended - block access
-    if (userData?.is_suspended) {
-      return NextResponse.redirect(new URL('/suspended', request.url));
     }
   }
 

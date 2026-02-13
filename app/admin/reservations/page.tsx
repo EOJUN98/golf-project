@@ -11,6 +11,7 @@ import { Suspense } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import AdminReservationsList from '@/components/admin/AdminReservationsList';
 import { AdminReservationRow } from '@/types/adminManagement';
+import type { Database } from '@/types/database';
 import { Loader2 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
@@ -30,7 +31,21 @@ interface PageProps {
   }>;
 }
 
-async function getReservations(params: any): Promise<AdminReservationRow[]> {
+type ReservationSearchParams = Awaited<PageProps['searchParams']>;
+type ReservationRow = Database['public']['Tables']['reservations']['Row'];
+type TeeTimeRow = Database['public']['Tables']['tee_times']['Row'];
+type GolfClubRow = Database['public']['Tables']['golf_clubs']['Row'];
+type UserRow = Pick<
+  Database['public']['Tables']['users']['Row'],
+  'id' | 'email' | 'name' | 'phone' | 'is_suspended' | 'no_show_count'
+>;
+
+type JoinedReservationRow = ReservationRow & {
+  tee_times: (TeeTimeRow & { golf_clubs: GolfClubRow | GolfClubRow[] | null }) | (TeeTimeRow & { golf_clubs: GolfClubRow | GolfClubRow[] | null })[] | null;
+  users: UserRow | UserRow[] | null;
+};
+
+async function getReservations(params: ReservationSearchParams): Promise<AdminReservationRow[]> {
   try {
     let query = supabase
       .from('reservations')
@@ -90,7 +105,7 @@ async function getReservations(params: any): Promise<AdminReservationRow[]> {
     }
 
     // Transform data to AdminReservationRow format
-    const transformedData: AdminReservationRow[] = (data || []).map((item: any) => {
+    const transformedData: AdminReservationRow[] = ((data || []) as JoinedReservationRow[]).map((item) => {
       const teeTime = Array.isArray(item.tee_times) ? item.tee_times[0] : item.tee_times;
       const golfClub = teeTime?.golf_clubs
         ? Array.isArray(teeTime.golf_clubs)
@@ -98,30 +113,13 @@ async function getReservations(params: any): Promise<AdminReservationRow[]> {
           : teeTime.golf_clubs
         : null;
       const user = Array.isArray(item.users) ? item.users[0] : item.users;
+      const reservation = item as Database['public']['Tables']['reservations']['Row'];
 
       return {
         reservation: {
-          id: item.id,
-          user_id: item.user_id,
-          tee_time_id: item.tee_time_id,
-          base_price: teeTime?.base_price || 0,
-          final_price: item.final_price,
-          discount_breakdown: item.discount_breakdown,
-          agreed_penalty: item.agreed_penalty,
-          payment_status: item.payment_status,
-          payment_key: item.payment_key,
-          order_id: item.order_id,
-          created_at: item.created_at,
-          updated_at: item.updated_at,
-          status: item.status,
-          is_imminent_deal: item.is_imminent_deal,
-          cancelled_at: item.cancelled_at,
-          cancel_reason: item.cancel_reason,
-          refund_amount: item.refund_amount,
-          no_show_marked_at: item.no_show_marked_at,
-          policy_version: item.policy_version,
-          settlement_id: item.settlement_id || null,
-          paid_amount: item.paid_amount || item.final_price || 0
+          ...reservation,
+          base_price: teeTime?.base_price ?? reservation.base_price,
+          paid_amount: reservation.paid_amount ?? reservation.final_price,
         },
         user: {
           id: user?.id || '',

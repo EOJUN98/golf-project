@@ -4,19 +4,28 @@
 // ==================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { calculatePricing, PricingContext, PricingResult } from '@/utils/pricingEngine';
-import { Database } from '@/types/database';
-
-type DBUserSegment = Database['public']['Enums']['segment_type'];
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user: authUser },
+      error: authError,
+    } = await supabase.auth.getUser();
+
+    if (authError || !authUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
-    const { userId, teeTimeId, finalPrice: clientProvidedPrice } = body;
+    const { teeTimeId, finalPrice: clientProvidedPrice } = body;
+    const teeTimeIdNum = Number(teeTimeId);
+    const clientFinalPrice = Number(clientProvidedPrice);
 
     // 1. Validate Input
-    if (!userId || !teeTimeId || !clientProvidedPrice) {
+    if (!teeTimeIdNum || !clientFinalPrice) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -27,10 +36,10 @@ export async function POST(request: NextRequest) {
     const { data: teeTimeData, error: teeTimeError } = await supabase
       .from('tee_times')
       .select('*')
-      .eq('id', teeTimeId)
+      .eq('id', teeTimeIdNum)
       .single();
 
-    const teeTime = teeTimeData as any;
+    const teeTime = teeTimeData;
 
     if (teeTimeError || !teeTime) {
       return NextResponse.json(
@@ -64,7 +73,7 @@ export async function POST(request: NextRequest) {
     const { data: user } = await supabase
       .from('users')
       .select('*')
-      .eq('id', userId)
+      .eq('id', authUser.id)
       .single();
 
     const context: PricingContext = {
@@ -77,8 +86,8 @@ export async function POST(request: NextRequest) {
     const serverPricing: PricingResult = calculatePricing(context);
 
     // Tolerance check
-    if (serverPricing.finalPrice !== clientProvidedPrice) {
-      console.warn(`Price Mismatch! Client: ${clientProvidedPrice}, Server: ${serverPricing.finalPrice}`);
+    if (serverPricing.finalPrice !== clientFinalPrice) {
+      console.warn(`Price Mismatch! Client: ${clientFinalPrice}, Server: ${serverPricing.finalPrice}`);
       return NextResponse.json(
         { error: 'Price validation failed. Please refresh and try again.', serverPrice: serverPricing.finalPrice },
         { status: 400 }
@@ -86,11 +95,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Create Reservation
-    const { data: reservation, error: reservationError } = await (supabase as any)
+    const { data: reservation, error: reservationError } = await supabase
       .from('reservations')
       .insert({
-        user_id: userId,
-        tee_time_id: teeTimeId,
+        user_id: authUser.id,
+        tee_time_id: teeTimeIdNum,
         base_price: serverPricing.basePrice,
         final_price: serverPricing.finalPrice,
         discount_breakdown: serverPricing.factors,
@@ -104,18 +113,18 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Update Tee Time Status
-    const { error: updateError } = await (supabase as any)
+    const { error: updateError } = await supabase
       .from('tee_times')
       .update({
         status: 'BOOKED',
-        reserved_by: userId,
+        reserved_by: authUser.id,
         reserved_at: new Date().toISOString()
       })
-      .eq('id', teeTimeId);
+      .eq('id', teeTimeIdNum);
 
     if (updateError) {
       // Rollback (simplified)
-      await (supabase as any).from('reservations').delete().eq('id', reservation.id);
+      await supabase.from('reservations').delete().eq('id', reservation.id);
       throw updateError;
     }
 

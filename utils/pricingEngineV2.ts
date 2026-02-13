@@ -1,6 +1,9 @@
 /**
  * SDD-03: Enhanced Pricing Engine V2
  *
+ * STATUS: REFERENCE ONLY - Not used in production
+ * Active version: pricingEngine.ts (V1)
+ *
  * Features:
  * - Weather-based discounts and blocking
  * - Time-urgency step-down discounts

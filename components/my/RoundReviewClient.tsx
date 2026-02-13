@@ -50,22 +50,17 @@ export default function RoundReviewClient({
   const [submitted, setSubmitted] = useState<boolean>(false);
 
   const handleHoleScoreChange = (hole: number, score: number) => {
-    const newScores = [...holeScores];
-    newScores[hole] = score;
+    const newScores = holeScores.map((s, i) => (i === hole ? score : s));
     setHoleScores(newScores);
     setTotalScore(newScores.reduce((sum, s) => sum + s, 0));
   };
 
   const handleHolePuttsChange = (hole: number, putts: number) => {
-    const newPutts = [...holePutts];
-    newPutts[hole] = putts;
-    setHolePutts(newPutts);
+    setHolePutts((prev) => prev.map((p, i) => (i === hole ? putts : p)));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock submission
-    alert('라운드 기록이 저장되었습니다!');
     setSubmitted(true);
   };
 

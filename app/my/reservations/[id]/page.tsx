@@ -1,12 +1,9 @@
-/**
- * Reservation Detail Page (Paid/Pending)
- *
- * Shows full golf course details for the booked tee time.
- * **MOCK DATA MODE**: Uses fake data
- */
-
+import { notFound, redirect } from 'next/navigation';
 import PageCanvas from '@/components/layout/PageCanvas';
-import GolfCourseDetailClient from '@/components/teetimes/GolfCourseDetailClient';
+import ReservationDetailClient from '@/components/my/ReservationDetailClient';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
+import type { Database } from '@/types/database';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,72 +12,139 @@ interface PageProps {
 }
 
 export default async function ReservationDetailPage({ params }: PageProps) {
-  const { id } = await params;
+  const currentUser = await getCurrentUserWithRoles();
 
-  const mockCourseDetail = {
-    id: parseInt(id, 10),
-    name: '인천 클럽72',
-    location_name: '인천 서구',
-    latitude: 37.4563,
-    longitude: 126.6345,
-    description:
-      '도심에서 가까운 명품 골프장으로, 뛰어난 코스 관리와 편리한 시설로 골퍼들에게 인기가 높습니다.',
-    avg_rating: 4.5,
-    total_reviews: 1250,
-    facilities: ['레스토랑', '프로샵', '사우나', '연습장', '락커룸', '캐디'],
-    total_length: 6842,
-    par: 72,
-    green_speed: 10.5,
-    green_type: 'Bent Grass',
-    slope_rating: 128,
-    course_rating: 72.5,
-    holes: 18,
-    course_map_url: '/images/course-map-placeholder.png',
-    hole_details: [
-      { hole: 1, par: 4, length: 385, handicap: 7 },
-      { hole: 2, par: 3, length: 165, handicap: 15 },
-      { hole: 3, par: 5, length: 520, handicap: 3 },
-      { hole: 4, par: 4, length: 410, handicap: 5 },
-    ],
-    strategy_tips: [
-      '드라이버 샷은 페어웨이 중앙을 노리세요',
-      '그린 주변 벙커가 많으니 주의하세요',
-      '바람이 강한 날에는 클럽 선택에 신중하세요',
-      '파5 홀에서는 2온을 노릴 수 있습니다',
-    ],
-    weather: {
-      temperature: 22,
-      condition: '맑음',
-      wind_speed: 5,
-      wind_direction: '서풍',
-      rain_probability: 10,
-      rainfall: 0,
-    },
-    notices: [
-      {
-        id: 1,
-        notice_type: 'MAINTENANCE',
-        severity: 'INFO',
-        title: '7번 홀 그린 보수 작업',
-        description: '7번 홀 그린 일부 구역 보수 중입니다. 임시 그린을 사용하세요.',
-        start_date: new Date().toISOString(),
-        end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-      {
-        id: 2,
-        notice_type: 'TOURNAMENT',
-        severity: 'WARNING',
-        title: '주말 프로 대회 진행',
-        description: '이번 주말 프로 대회가 진행됩니다. 일부 시간대 예약 제한이 있습니다.',
-        start_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-        end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      },
-    ],
+  if (!currentUser) {
+    redirect('/login?redirect=/my/reservations');
+  }
+
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+
+  type TeeTimeRow = Pick<
+    Database['public']['Tables']['tee_times']['Row'],
+    'id' | 'tee_off' | 'base_price' | 'status' | 'golf_club_id' | 'weather_condition'
+  > & {
+    golf_clubs:
+      | Pick<Database['public']['Tables']['golf_clubs']['Row'], 'id' | 'name' | 'location_name'>
+      | Pick<Database['public']['Tables']['golf_clubs']['Row'], 'id' | 'name' | 'location_name'>[]
+      | null;
   };
+
+  type JoinedReservation = Database['public']['Tables']['reservations']['Row'] & {
+    tee_times: TeeTimeRow | TeeTimeRow[] | null;
+  };
+
+  const { data, error } = await supabase
+    .from('reservations')
+    .select(
+      `
+        *,
+        tee_times!inner (
+          id,
+          tee_off,
+          base_price,
+          status,
+          golf_club_id,
+          weather_condition,
+          golf_clubs (
+            id,
+            name,
+            location_name
+          )
+        )
+      `
+    )
+    .eq('id', id)
+    .eq('user_id', currentUser.id)
+    .single();
+
+  if (error || !data) {
+    notFound();
+  }
+
+  const reservation = data as unknown as JoinedReservation;
+  if (reservation.status === 'COMPLETED') {
+    redirect(`/my/reservations/${id}/review`);
+  }
+
+  const teeTime = Array.isArray(reservation.tee_times)
+    ? reservation.tee_times[0]
+    : reservation.tee_times;
+
+  if (!teeTime) {
+    notFound();
+  }
+
+  const golfClub = teeTime.golf_clubs
+    ? Array.isArray(teeTime.golf_clubs)
+      ? teeTime.golf_clubs[0]
+      : teeTime.golf_clubs
+    : null;
+
+  const teeOff = new Date(teeTime.tee_off);
+  const targetDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(teeOff);
+  const targetHour = Number(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Seoul',
+      hour: '2-digit',
+      hour12: false,
+    }).format(teeOff)
+  );
+
+  let weather: Database['public']['Tables']['weather_cache']['Row'] | null = null;
+  const { data: exactWeather } = await supabase
+    .from('weather_cache')
+    .select('*')
+    .eq('target_date', targetDate)
+    .eq('target_hour', targetHour)
+    .maybeSingle();
+
+  weather = exactWeather;
+
+  if (!weather) {
+    const { data: fallbackWeather } = await supabase
+      .from('weather_cache')
+      .select('*')
+      .eq('target_date', targetDate)
+      .order('target_hour', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    weather = fallbackWeather;
+  }
+
+  const course = golfClub
+    ? {
+        id: golfClub.id,
+        name: golfClub.name,
+        location_name: golfClub.location_name,
+        total_length_yards: null,
+        course_rating: null,
+        slope_rating: null,
+        green_speed: null,
+        green_type: null,
+        course_overview: '코스 상세 정보는 준비 중입니다.',
+        course_map_url: null,
+        hole_details: [],
+      }
+    : null;
+
+  const notices: Array<Record<string, unknown>> = [];
 
   return (
     <PageCanvas>
-      <GolfCourseDetailClient course={mockCourseDetail} />
+      <ReservationDetailClient
+        user={currentUser}
+        reservation={reservation}
+        course={course}
+        notices={notices}
+        weather={weather}
+      />
     </PageCanvas>
   );
 }

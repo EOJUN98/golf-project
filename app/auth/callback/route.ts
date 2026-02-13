@@ -1,6 +1,16 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import { createServerClient } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+
+function setCookieSafe(cookieStore: Awaited<ReturnType<typeof cookies>>, cookie: { name: string; value: string; options?: any }) {
+  const storeAny = cookieStore as any;
+  const { name, value, options } = cookie;
+  try {
+    storeAny.set({ name, value, ...(options || {}) });
+  } catch {
+    storeAny.set(name, value, options);
+  }
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
@@ -14,14 +24,13 @@ export async function GET(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
+          getAll() {
+            return cookieStore.getAll();
           },
-          set(name: string, value: string, options: CookieOptions) {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove(name: string, options: CookieOptions) {
-            cookieStore.delete({ name, ...options });
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              setCookieSafe(cookieStore, { name, value, options });
+            });
           },
         },
       }
