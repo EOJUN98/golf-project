@@ -990,3 +990,17 @@
     - 세션 재시작/재연결하는 절차가 필요하다는 점을 명문화
 - 남은 이슈:
   - MCP 설정 화면/경로는 사용 중인 Codex 클라이언트에 종속이라, UI에서 서버 추가 후 재연결이 필요
+
+### 2026-02-14 48차 기록 (Codex MCP 설정 파일 보정)
+- 배경:
+  - mac 재시작 이후 MCP 연결이 끊어졌다는 사용자 보고
+- 작업:
+  - 로컬 Codex 설정 파일(`~/.codex/config.toml`)에서 Supabase MCP 서버 설정을 확인
+  - 기존 Supabase MCP `project_ref`가 다른 프로젝트로 지정되어 있어 `rgbwzpwrbcppdydihxye`로 교체
+- 변경:
+  - 로컬 환경 파일: `~/.codex/config.toml` (레포 외부, 커밋 대상 아님)
+- 결과:
+  - `mcp_servers.supabase.url`이 `project_ref=rgbwzpwrbcppdydihxye`로 수정됨
+  - 단, 현재 실행 중인 세션에서는 MCP 리소스가 여전히 0개로 보임 → Codex 세션 재시작/재연결이 필요할 가능성이 큼
+- 남은 이슈:
+  - 재시작 후에도 리소스가 0개면: 네트워크/DNS 제한 또는 인증 토큰 문제(`SUPABASE_ACCESS_TOKEN`) 가능성 점검 필요
