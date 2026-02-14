@@ -959,3 +959,34 @@
 - 검증:
   - `npm run lint` 통과
   - `npm run build` 통과
+
+### 2026-02-14 46차 기록 (Supabase MCP 재연결 점검)
+- 작업:
+  - Supabase MCP 재연결 요청에 따라, 현재 세션의 MCP 서버/리소스 등록 상태 확인
+  - 레포 내 MCP 설정 파일 존재 여부 탐색
+- 변경 파일: 없음 (점검)
+- 결과:
+  - MCP 리소스/템플릿 목록이 비어 있음(현재 세션에 MCP 서버가 0개로 등록된 상태)
+  - 레포 내부에서도 `mcp.json`, `.mcp.json` 등 MCP 설정 파일을 찾지 못함
+  - 결론: 이 환경에서는 “MCP 재연결”을 코드/터미널에서 수행할 수 없고, 사용 중인 Codex/클라이언트의 MCP 설정에서 Supabase 서버를 다시 추가해야 함
+- 남은 이슈:
+  - Supabase MCP를 사용하려면: 클라이언트 MCP 설정에 Supabase 서버 등록(프로젝트 URL + 키) 후 세션 재시작/재연결 필요
+
+### 2026-02-14 47차 기록 (MCP 재연결 가이드 기록 + 예시 env 파일 시크릿 제거)
+- 배경:
+  - mac 재시작 후 MCP 연결이 끊어짐
+  - Supabase 프로젝트 ref: `rgbwzpwrbcppdydihxye` (URL: `https://<project-ref>.supabase.co`)
+- 작업:
+  - 레포에 키/토큰을 “기록”하라는 요청이 있었으나, 시크릿은 레포 문서에 남기면 안 되므로(유출 위험) 절차만 기록하는 방식으로 정리
+  - 예시 파일에 실키가 들어있던 문제를 수정(placeholder로 치환)
+- 변경 파일:
+  - `.env.local.example`
+  - `codex.md`
+  - `합동작업.md`
+- 결과:
+  - `.env.local.example`에 포함되어 있던 실 Supabase URL/anon key, WEATHER_API_KEY, Toss 키를 placeholder로 교체
+  - MCP 재연결은 레포 코드가 아니라 “Codex/클라이언트 MCP 설정”에서:
+    - Supabase MCP 서버를 추가하고(Project URL + Key 입력)
+    - 세션 재시작/재연결하는 절차가 필요하다는 점을 명문화
+- 남은 이슈:
+  - MCP 설정 화면/경로는 사용 중인 Codex 클라이언트에 종속이라, UI에서 서버 추가 후 재연결이 필요
