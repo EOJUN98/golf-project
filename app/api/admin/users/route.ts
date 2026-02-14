@@ -110,7 +110,8 @@ type PatchBody =
   | { action: 'set-segment'; userId: string; segment: Segment }
   | { action: 'toggle-admin'; userId: string; isAdmin: boolean }
   | { action: 'set-blacklisted'; userId: string; blacklisted: boolean; reason?: string | null }
-  | { action: 'recalculate-segment'; userId: string };
+  | { action: 'recalculate-segment'; userId: string }
+  | { action: 'set-cherry-score'; userId: string; cherryScore: number };
 
 /**
  * PATCH /api/admin/users
@@ -204,6 +205,28 @@ export async function PATCH(req: NextRequest) {
       if (error) throw error;
 
       return NextResponse.json({ success: true, newSegment: data });
+    }
+
+    if (action === 'set-cherry-score') {
+      if (typeof body.userId !== 'string' || typeof (body as any).cherryScore !== 'number') {
+        return NextResponse.json({ error: 'Invalid payload for set-cherry-score' }, { status: 400 });
+      }
+
+      const score = Math.floor((body as any).cherryScore);
+      if (!Number.isFinite(score) || score < 0 || score > 100) {
+        return NextResponse.json({ error: 'cherryScore must be 0-100' }, { status: 400 });
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({
+          cherry_score: score,
+          updated_at: new Date().toISOString(),
+        } as any)
+        .eq('id', body.userId);
+
+      if (error) throw error;
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });

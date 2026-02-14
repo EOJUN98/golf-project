@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/database';
 import {
   User,
@@ -40,6 +39,20 @@ export default function AdminUserManagement({ initialUsers }: AdminUserManagemen
   const [filterBlacklist, setFilterBlacklist] = useState<'ALL' | 'BLACKLISTED' | 'ACTIVE'>('ALL');
   const [processingId, setProcessingId] = useState<string | null>(null);
 
+  async function patchAdminUser(body: unknown) {
+    const res = await fetch('/api/admin/users', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const message = typeof payload?.error === 'string' ? payload.error : 'Request failed';
+      throw new Error(message);
+    }
+  }
+
   // Filter users
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -60,17 +73,12 @@ export default function AdminUserManagement({ initialUsers }: AdminUserManagemen
 
     setProcessingId(userId);
     try {
-      const { error } = await (supabase as any)
-        .from('users')
-        .update({
-          blacklisted: !currentBlacklisted,
-          blacklist_reason: currentBlacklisted ? null : reason,
-          blacklisted_at: currentBlacklisted ? null : new Date().toISOString(),
-          blacklisted_by: currentBlacklisted ? null : 'ADMIN' // Replace with actual admin ID
-        })
-        .eq('id', userId);
-
-      if (error) throw error;
+      await patchAdminUser({
+        action: 'set-blacklisted',
+        userId,
+        blacklisted: !currentBlacklisted,
+        reason: currentBlacklisted ? null : reason,
+      });
 
       setUsers(prev => prev.map(u =>
         u.id === userId
@@ -106,16 +114,7 @@ export default function AdminUserManagement({ initialUsers }: AdminUserManagemen
 
     setProcessingId(userId);
     try {
-      const { error } = await (supabase as any)
-        .from('users')
-        .update({
-          segment: newSegment,
-          segment_override_by: 'ADMIN', // Replace with actual admin ID
-          segment_override_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-
-      if (error) throw error;
+      await patchAdminUser({ action: 'set-segment', userId, segment: newSegment });
 
       setUsers(prev => prev.map(u =>
         u.id === userId ? { ...u, segment: newSegment } : u
@@ -144,12 +143,7 @@ export default function AdminUserManagement({ initialUsers }: AdminUserManagemen
 
     setProcessingId(userId);
     try {
-      const { error } = await (supabase as any)
-        .from('users')
-        .update({ cherry_score: newScore })
-        .eq('id', userId);
-
-      if (error) throw error;
+      await patchAdminUser({ action: 'set-cherry-score', userId, cherryScore: newScore });
 
       setUsers(prev => prev.map(u =>
         u.id === userId ? { ...u, cherry_score: newScore } : u

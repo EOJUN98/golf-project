@@ -10,20 +10,14 @@ import { revalidatePath } from 'next/cache';
 import { Database } from '@/types/database';
 import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
 
 type TeeTime = Database['public']['Tables']['tee_times']['Row'];
 type TeeTimeInsert = Database['public']['Tables']['tee_times']['Insert'];
 type TeeTimeUpdate = Database['public']['Tables']['tee_times']['Update'];
 type GolfClub = Database['public']['Tables']['golf_clubs']['Row'];
 
-function getKstDayRange(date: Date) {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const dateStr = formatter.format(date);
+function getKstDayRangeFromYmd(dateStr: string) {
   const start = new Date(`${dateStr}T00:00:00+09:00`);
   const end = new Date(`${dateStr}T23:59:59.999+09:00`);
   return { startISO: start.toISOString(), endISO: end.toISOString() };
@@ -77,7 +71,8 @@ export async function getAccessibleGolfClubs(): Promise<{
       return { success: false, error: 'Unauthorized' };
     }
 
-    const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClientOptional();
+    const supabase = adminClient ?? await createSupabaseServerClient();
 
     if (role.isSuperAdmin || role.isAdmin) {
       // Super admin can see all clubs
@@ -117,7 +112,7 @@ export async function getAccessibleGolfClubs(): Promise<{
 
 export async function getTeeTimes(
   golfClubId: number,
-  date: Date
+  dateYmd: string
 ): Promise<{
   success: boolean;
   teeTimes?: TeeTime[];
@@ -134,11 +129,16 @@ export async function getTeeTimes(
       return { success: false, error: 'Access denied to this golf club' };
     }
 
+    if (typeof dateYmd !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
+      return { success: false, error: 'Invalid date' };
+    }
+
     // Calculate date range in KST (Asia/Seoul)
-    const { startISO, endISO } = getKstDayRange(date);
+    const { startISO, endISO } = getKstDayRangeFromYmd(dateYmd);
 
     // Query tee times
-    const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClientOptional();
+    const supabase = adminClient ?? await createSupabaseServerClient();
     const { data, error } = await supabase
       .from('tee_times')
       .select('*')
@@ -195,7 +195,8 @@ export async function createTeeTime(payload: {
       updated_by: role.userId,
     };
 
-    const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClientOptional();
+    const supabase = adminClient ?? await createSupabaseServerClient();
     const { data, error } = await supabase
       .from('tee_times')
       .insert(insertData)
@@ -234,7 +235,8 @@ export async function updateTeeTime(
       return { success: false, error: 'Unauthorized' };
     }
 
-    const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClientOptional();
+    const supabase = adminClient ?? await createSupabaseServerClient();
 
     // Get existing tee time to check permissions and status
     const { data: existing, error: fetchError } = await supabase
@@ -295,7 +297,8 @@ export async function blockTeeTime(id: number): Promise<{
       return { success: false, error: 'Unauthorized' };
     }
 
-    const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClientOptional();
+    const supabase = adminClient ?? await createSupabaseServerClient();
 
     // Get existing tee time
     const { data: existing, error: fetchError } = await supabase
@@ -351,7 +354,8 @@ export async function unblockTeeTime(id: number): Promise<{
       return { success: false, error: 'Unauthorized' };
     }
 
-    const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClientOptional();
+    const supabase = adminClient ?? await createSupabaseServerClient();
 
     // Get existing tee time
     const { data: existing, error: fetchError } = await supabase

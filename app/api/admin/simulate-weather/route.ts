@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,6 +37,10 @@ function generateRandomWeather() {
 
 export async function POST() {
   try {
+    const currentUser = await requireAdminAccess();
+    const adminClient = createSupabaseAdminClientOptional();
+    const supabase = adminClient ?? await createSupabaseServerClient();
+
     const { data: teeTimes, error: fetchError } = await supabase
       .from('tee_times')
       .select('id')
@@ -50,7 +56,7 @@ export async function POST() {
 
       const { error } = await (supabase as any)
         .from('tee_times')
-        .update({ weather_condition: weather })
+        .update({ weather_condition: weather, updated_by: currentUser.id })
         .eq('id', t.id);
 
       if (!error) updatedCount++;

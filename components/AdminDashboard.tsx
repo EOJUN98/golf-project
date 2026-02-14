@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import {
   Settings,
   Power,
@@ -29,6 +28,20 @@ export default function AdminDashboard({ initialTeeTimes, stats }: AdminDashboar
   // Calculate max value for chart scaling
   const maxRevenue = Math.max(...stats.chartData.map(d => d.amount), 1);
 
+  async function patchAdminTeeTime(body: unknown) {
+    const res = await fetch('/api/admin/tee-times', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      const message = typeof payload?.error === 'string' ? payload.error : 'Request failed';
+      throw new Error(message);
+    }
+  }
+
   const toggleBlockStatus = async (id: number, currentStatus: string) => {
     if (currentStatus === 'BOOKED') return alert('이미 예약된 건은 수정할 수 없습니다.');
     
@@ -36,12 +49,7 @@ export default function AdminDashboard({ initialTeeTimes, stats }: AdminDashboar
     const newStatus = currentStatus === 'OPEN' ? 'BLOCKED' : 'OPEN';
 
     try {
-      const { error } = await (supabase as any)
-        .from('tee_times')
-        .update({ status: newStatus })
-        .eq('id', id);
-
-      if (error) throw error;
+      await patchAdminTeeTime({ action: 'set-status', id, status: newStatus });
 
       setTeeTimes(prev => prev.map(t =>
         t.id === id ? { ...t, status: newStatus as any } : t
@@ -63,12 +71,7 @@ export default function AdminDashboard({ initialTeeTimes, stats }: AdminDashboar
 
     setProcessingId(id);
     try {
-        const { error } = await (supabase as any)
-            .from('tee_times')
-            .update({ base_price: newPrice })
-            .eq('id', id);
-
-        if (error) throw error;
+        await patchAdminTeeTime({ action: 'update-base-price', id, base_price: newPrice });
 
         setTeeTimes(prev => prev.map(t =>
             t.id === id ? { ...t, base_price: newPrice } : t
@@ -191,13 +194,18 @@ export default function AdminDashboard({ initialTeeTimes, stats }: AdminDashboar
             </thead>
             <tbody>
               {teeTimes.map((item) => {
-                const timeStr = new Date(item.tee_off).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const dateTimeStr = new Date(item.tee_off).toLocaleString('ko-KR', {
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
                 const weather: any = item.weather_condition || {}; // Parse JSONB
                 const isRain = weather.rn1 > 0 || weather.sky === 'RAIN';
 
                 return (
                   <tr key={item.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                    <td className="p-4 font-bold text-lg">{timeStr}</td>
+                    <td className="p-4 font-bold text-lg">{dateTimeStr}</td>
                     <td className="p-4 text-sm text-gray-400">
                         {isRain ? (
                             <span className="flex items-center text-blue-400 gap-1"><CloudRain size={14}/> 비 ({weather.rn1 || 0}mm)</span>

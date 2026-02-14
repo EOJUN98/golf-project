@@ -29,7 +29,8 @@ type GolfClub = Database['public']['Tables']['golf_clubs']['Row'];
 export default function AdminTeeTimesPage() {
   const [clubs, setClubs] = useState<GolfClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<number | null>(null);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // Store as YYYY-MM-DD string to avoid timezone shifting bugs in browsers.
+  const [selectedDateYmd, setSelectedDateYmd] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
   const [teeTimes, setTeeTimes] = useState<TeeTime[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
@@ -71,13 +72,13 @@ export default function AdminTeeTimesPage() {
     if (selectedClubId) {
       fetchTeeTimes();
     }
-  }, [selectedClubId, selectedDate]);
+  }, [selectedClubId, selectedDateYmd]);
 
   const fetchTeeTimes = async () => {
     if (!selectedClubId) return;
 
     setFetching(true);
-    const result = await getTeeTimes(selectedClubId, selectedDate);
+    const result = await getTeeTimes(selectedClubId, selectedDateYmd);
 
     if (result.success && result.teeTimes) {
       setTeeTimes(result.teeTimes);
@@ -92,8 +93,7 @@ export default function AdminTeeTimesPage() {
     if (!selectedClubId) return;
 
     // Combine date and time
-    const dateStr = format(selectedDate, 'yyyy-MM-dd');
-    const teeOffISO = new Date(`${dateStr}T${formData.tee_off_time}:00`).toISOString();
+    const teeOffISO = new Date(`${selectedDateYmd}T${formData.tee_off_time}:00+09:00`).toISOString();
 
     const result = await createTeeTime({
       golf_club_id: selectedClubId,
@@ -122,8 +122,7 @@ export default function AdminTeeTimesPage() {
 
     // If time changed, include tee_off
     if (formData.tee_off_time) {
-      const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      payload.tee_off = new Date(`${dateStr}T${formData.tee_off_time}:00`).toISOString();
+      payload.tee_off = new Date(`${selectedDateYmd}T${formData.tee_off_time}:00+09:00`).toISOString();
     }
 
     const result = await updateTeeTime(editingTeeTime.id, payload);
@@ -279,8 +278,8 @@ export default function AdminTeeTimesPage() {
             </label>
             <input
               type="date"
-              value={format(selectedDate, 'yyyy-MM-dd')}
-              onChange={(e) => setSelectedDate(new Date(e.target.value))}
+              value={selectedDateYmd}
+              onChange={(e) => setSelectedDateYmd(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
             />
           </div>
