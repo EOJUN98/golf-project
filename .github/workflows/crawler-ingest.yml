@@ -64,6 +64,8 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GOLFROCK_LOGIN_ID: ${{ secrets.GOLFROCK_LOGIN_ID }}
+          GOLFROCK_LOGIN_PW: ${{ secrets.GOLFROCK_LOGIN_PW }}
         run: |
           if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
             echo "Missing required secrets: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY"
@@ -72,6 +74,8 @@ jobs:
           cat > crawler/.env.local <<EOF
           NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
           SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
+          GOLFROCK_LOGIN_ID=$GOLFROCK_LOGIN_ID
+          GOLFROCK_LOGIN_PW=$GOLFROCK_LOGIN_PW
           EOF
 
       - name: Seed default targets

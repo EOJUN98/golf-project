@@ -71,103 +71,64 @@ function toYyyymmdd(dateText) {
 }
 
 async function discoverClubIds(args) {
-  let playwright;
-  try {
-    playwright = await import('playwright');
-  } catch {
-    throw new Error('Missing dependency: playwright. Run: npm --prefix crawler install');
-  }
-
   const bookingDay = toYyyymmdd(args.date || kstDatePlus(7));
   const scanIds = Array.from({ length: args.to - args.from + 1 }, (_, idx) => args.from + idx);
-  const browser = await playwright.chromium.launch({ headless: !args.headful });
-  const context = await browser.newContext();
-  const landingUrl = `https://www.teeupnjoy.com/hp/join/reslist.do?bookingDay=${bookingDay}`;
+  const endpoint = 'https://www.teeupnjoy.com/hp/join/hpJoinTeeTimeSearchClub.do';
 
-  try {
-    const workers = Array.from({ length: args.concurrency }, async (_, workerIdx) => {
-      const page = await context.newPage();
-      await page.goto(landingUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000,
-      });
+  async function requestClubCount(clubId) {
+    const params = new URLSearchParams();
+    params.set('trgetTcYn', 'Y');
+    params.set('bookingDay', bookingDay);
+    params.set('bookingEndDay', bookingDay);
+    params.set('clubId', String(clubId));
+    params.set('joinType', args.joinType);
 
-      const hits = [];
-      for (let i = workerIdx; i < scanIds.length; i += args.concurrency) {
-        const clubId = scanIds[i];
-        let result = null;
-        let attempts = 0;
-
-        while (attempts < 3) {
-          attempts += 1;
-          try {
-            result = await page.evaluate(
-              async ({ bookingDayValue, clubIdValue, joinTypeValue }) => {
-                const params = new URLSearchParams();
-                params.set('trgetTcYn', 'Y');
-                params.set('bookingDay', bookingDayValue);
-                params.set('bookingEndDay', bookingDayValue);
-                params.set('clubId', String(clubIdValue));
-                params.set('joinType', joinTypeValue);
-
-                const response = await fetch('/hp/join/hpJoinTeeTimeSearchClub.do', {
-                  method: 'POST',
-                  headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-                  body: params.toString(),
-                  credentials: 'include',
-                });
-
-                const text = await response.text();
-                try {
-                  const json = JSON.parse(text);
-                  const count = Number(json?.resultListCnt?.[bookingDayValue] || 0);
-                  return {
-                    ok: true,
-                    success: !!json.success,
-                    count,
-                    redirect: json.redirect || null,
-                  };
-                } catch {
-                  return { ok: false, success: false, count: 0, redirect: null };
-                }
-              },
-              {
-                bookingDayValue: bookingDay,
-                clubIdValue: clubId,
-                joinTypeValue: args.joinType,
-              }
-            );
-            break;
-          } catch {
-            if (attempts >= 3) {
-              result = { ok: false, success: false, count: 0, redirect: null };
-              break;
-            }
-            await page.waitForTimeout(150 * attempts);
-          }
-        }
-
-        if (result.ok && result.success && result.count >= args.minCount) {
-          hits.push({ club_id: clubId, count: result.count });
-        }
-      }
-      await page.close();
-      return hits;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+      body: params.toString(),
     });
 
-    const batches = await Promise.all(workers);
-    const merged = batches.flat().sort((a, b) => b.count - a.count || a.club_id - b.club_id);
-    return {
-      booking_day: bookingDay,
-      range: [args.from, args.to],
-      min_count: args.minCount,
-      found_count: merged.length,
-      rows: merged,
-    };
-  } finally {
-    await context.close();
-    await browser.close();
+    const text = await response.text();
+    const json = JSON.parse(text);
+    const count = Number(json?.resultListCnt?.[bookingDay] || 0);
+    return { success: Boolean(json?.success), count };
   }
+
+  const workers = Array.from({ length: args.concurrency }, async (_, workerIdx) => {
+    const hits = [];
+    for (let i = workerIdx; i < scanIds.length; i += args.concurrency) {
+      const clubId = scanIds[i];
+      let attempts = 0;
+      let result = { success: false, count: 0 };
+
+      while (attempts < 3) {
+        attempts += 1;
+        try {
+          result = await requestClubCount(clubId);
+          break;
+        } catch {
+          if (attempts >= 3) break;
+          await new Promise((resolve) => setTimeout(resolve, 150 * attempts));
+        }
+      }
+
+      if (result.success && result.count >= args.minCount) {
+        hits.push({ club_id: clubId, count: result.count });
+      }
+    }
+    return hits;
+  });
+
+  const batches = await Promise.all(workers);
+  const merged = batches.flat().sort((a, b) => b.count - a.count || a.club_id - b.club_id);
+  return {
+    booking_day: bookingDay,
+    range: [args.from, args.to],
+    min_count: args.minCount,
+    found_count: merged.length,
+    rows: merged,
+  };
 }
 
 async function maybeWriteToTarget(args, result) {

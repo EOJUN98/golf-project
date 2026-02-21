@@ -511,85 +511,280 @@ async function crawlGolfPangList(browser, target, args) {
   }
 }
 
-async function crawlGolfRockList(browser, target) {
+async function loginGolfRock(page) {
+  const loginId = process.env.GOLFROCK_LOGIN_ID;
+  const loginPw = process.env.GOLFROCK_LOGIN_PW;
+
+  if (!loginId || !loginPw) {
+    return { success: false, reason: 'Missing GOLFROCK_LOGIN_ID or GOLFROCK_LOGIN_PW env vars' };
+  }
+
+  await page.goto('https://m.golfrock.co.kr/member/login.asp', {
+    waitUntil: 'networkidle',
+    timeout: 30000,
+  });
+
+  await page.fill('input[name="memb_handphone"]', loginId);
+  await page.fill('input[name="memb_pass"]', loginPw);
+  await page.click('button.btn-yell');
+  await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 15000 }).catch(() => {});
+
+  const pageText = (await page.textContent('body')) || '';
+  const hasLogout = /로그아웃|logout|마이페이지/i.test(pageText);
+
+  return { success: hasLogout, reason: hasLogout ? 'OK' : 'Login may have failed' };
+}
+
+function parseGolfRockPriceHtml(html) {
+  // GolfRock AJAX response structure:
+  // <ul class='listwrap' onclick="fnv_move_page(...)">
+  //   <li><p>2/20(금)</p><p class='club'>골프장명</p>...</li>
+  //   <li><p class='time'>10:45</p>...</li>
+  //   <li>...</li>
+  //   <li><p class='price'><span>현장</span>80,000원</p>...</li>
+  // </ul>
+  const rows = [];
+  const ulRegex = /<ul[^>]*class=['"]?listwrap['"]?[^>]*>([\s\S]*?)<\/ul>/gi;
+  let ulMatch;
+
+  while ((ulMatch = ulRegex.exec(html)) !== null) {
+    const ulContent = ulMatch[1];
+
+    const dateMatch = ulContent.match(/<p[^>]*>(\d{1,2}\/\d{1,2}\([^)]*\))<\/p>/);
+    const clubMatch = ulContent.match(/<p[^>]*class=['"]?club['"]?[^>]*>([^<]*)<\/p>/);
+    const timeMatch = ulContent.match(/<p[^>]*class=['"]?time['"]?[^>]*>([^<]*)<\/p>/);
+    const priceMatch = ulContent.match(/<p[^>]*class=['"]?price['"]?[^>]*>([\s\S]*?)<\/p>/);
+
+    if (priceMatch) {
+      // Strip HTML tags then extract price text: "<span>현장</span>80,000원" → "현장80,000원"
+      const rawPriceText = priceMatch[1].replace(/<[^>]+>/g, '').trim();
+
+      // Extract prefix (현장/선입/카드/현금) and numeric price separately
+      const prefixMatch = rawPriceText.match(/^(현장|선입|카드|현금)/);
+      const prefix = prefixMatch ? prefixMatch[1] : '';
+      const afterPrefix = prefixMatch ? rawPriceText.slice(prefix.length) : rawPriceText;
+
+      // Check if there's an actual numeric price (e.g. "80,000원" or "5만")
+      const hasNumericPrice = /[0-9]/.test(afterPrefix);
+
+      rows.push({
+        dateText: dateMatch ? dateMatch[1].trim() : '',
+        clubText: clubMatch ? clubMatch[1].trim() : '',
+        teeTime: timeMatch ? timeMatch[1].trim() : null,
+        priceText: hasNumericPrice ? `${prefix}${afterPrefix}` : rawPriceText,
+        hasPrice: hasNumericPrice,
+      });
+    }
+  }
+
+  return rows;
+}
+
+async function crawlGolfRockList(browser, target, args) {
   const page = await browser.newPage();
+  const now = new Date();
+  const desiredWindows = args.window ? [args.window] : COLLECTION_WINDOWS;
 
   try {
-    const listUrl = target.url || 'https://m.golfrock.co.kr/join_new_sub.asp';
-    await page.goto(listUrl, {
-      waitUntil: 'networkidle',
-      timeout: 60000,
-    });
-    await page.waitForTimeout(1000);
+    // Step 1: 로그인
+    const loginResult = await loginGolfRock(page);
+    if (!loginResult.success) {
+      return {
+        success: false,
+        rows: [
+          buildBaseSnapshot(target, {
+            source_url: target.url || 'https://m.golfrock.co.kr/join_new_sub.asp',
+            crawl_status: 'FAILED',
+            availability_status: 'AUTH_REQUIRED',
+            source_platform: 'WEB',
+            error_message: loginResult.reason,
+            payload: { adapter: 'golfrock_list', login_failed: true },
+          }),
+        ],
+      };
+    }
 
-    const rows = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('tr[onclick*="join_view_new"]')).map((tr) => {
-        const cells = Array.from(tr.querySelectorAll('td')).map((td) =>
-          (td.textContent || '').replace(/\s+/g, ' ').trim()
-        );
-        return {
-          cells,
-          onclick: tr.getAttribute('onclick') || '',
-        };
-      });
-    });
+    // Step 2: 리스트 페이지 접속 + tranForm 기본 파라미터 캡처
+    const listUrl = target.url || 'https://m.golfrock.co.kr/join_new_sub.asp';
+    await page.goto(listUrl, { waitUntil: 'networkidle', timeout: 60000 });
 
     const out = [];
-    for (const row of rows) {
-      const dateTime = row.cells[0] || '';
-      const courseAndPrice = row.cells[1] || '';
+    const horizonDates = buildHorizonDates(now).filter((item) => desiredWindows.includes(item.window));
 
-      const dateMatch = dateTime.match(/(\d{1,2})\/(\d{1,2})\([^)]*\)\s*([0-2]?\d:[0-5]\d)/);
-      const playDate = dateMatch ? parseMonthDayToDate(`${dateMatch[1]}/${dateMatch[2]}`) : null;
-      const teeTime = dateMatch ? parseTeeTime(dateMatch[3]) : null;
+    for (const horizon of horizonDates) {
+      const dateYmd = formatYyyymmdd(horizon.date);
 
-      const courseName = courseAndPrice
-        .replace(/([0-9]+(?:\.[0-9]+)?)\s*만/g, '')
-        .replace(/([0-9,]+)\s*원/g, '')
-        .trim();
+      // Step 3: 날짜 변경 via date_check → 페이지 리로드 대기
+      await page.evaluate((dateVal) => {
+        if (typeof date_check === 'function') {
+          date_check(dateVal);
+        } else {
+          const condDate = document.querySelector('#cond_date');
+          if (condDate) condDate.value = dateVal;
+          const form = document.querySelector('form[name="frm"]');
+          if (form) form.submit();
+        }
+      }, dateYmd);
+      await page.waitForTimeout(1500);
 
-      if (!courseMatches(target.course_name, courseName)) {
-        continue;
+      // Step 4: DOM에서 모든 클럽 data-value 추출 (클릭 불필요)
+      const clubs = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('.club_info')).map((el) => ({
+          dataValue: el.getAttribute('data-value') || '',
+          clubName: (el.querySelector('.club_str')?.textContent || '')
+            .replace(/^추천\s*/, '')
+            .replace(/<[^>]+>/g, '')
+            .trim(),
+        })).filter((c) => c.dataValue)
+      );
+
+      // Step 5: tranForm의 기본 파라미터 캡처
+      const formParams = await page.evaluate(() => {
+        const form = document.querySelector('#tranForm');
+        if (!form) return '';
+        return new URLSearchParams(new FormData(form)).toString();
+      });
+
+      // Step 6: 직접 AJAX fetch — 5개씩 병렬 배치
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < clubs.length; i += BATCH_SIZE) {
+        const batch = clubs.slice(i, i + BATCH_SIZE);
+
+        const batchResults = await page.evaluate(
+          async ({ batchClubs, baseParams, dateVal }) => {
+            const results = [];
+            const fetches = batchClubs.map(async (club) => {
+              try {
+                const params = new URLSearchParams(baseParams);
+                params.set('club_code_str', club.dataValue);
+                params.set('cond_date', dateVal);
+
+                const resp = await fetch('join_time_list_get.asp', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                    'X-Requested-With': 'XMLHttpRequest',
+                  },
+                  body: params.toString(),
+                  credentials: 'include',
+                });
+
+                const html = await resp.text();
+                return { html, clubName: club.clubName, dataValue: club.dataValue, ok: true };
+              } catch (e) {
+                return { html: '', clubName: club.clubName, dataValue: club.dataValue, ok: false, error: String(e) };
+              }
+            });
+
+            return Promise.all(fetches);
+          },
+          { batchClubs: batch, baseParams: formParams, dateVal: dateYmd }
+        );
+
+        // Step 7: HTML 응답에서 가격 파싱 (Node.js에서 regex 기반)
+        for (const result of batchResults) {
+          if (!result.ok || !result.html) continue;
+
+          if (!courseMatches(target.course_name, result.clubName)) {
+            continue;
+          }
+
+          const priceRows = parseGolfRockPriceHtml(result.html);
+
+          for (const priceRow of priceRows) {
+            if (!priceRow.hasPrice) continue; // Skip entries without numeric prices
+
+            const priceClean = priceRow.priceText.replace(/현장|선입|카드|현금/g, '').trim();
+            const finalPrice = parsePrice(priceClean);
+            const playDate = parseMonthDayToDate(priceRow.dateText, now) || horizon.date;
+            const priceType = /선입/.test(priceRow.priceText) ? 'prepaid' : 'onsite';
+            const teeTime = parseTeeTime(priceRow.teeTime);
+
+            out.push(
+              buildBaseSnapshot(target, {
+                course_name: priceRow.clubText || result.clubName || target.course_name,
+                source_url: listUrl,
+                play_date: playDate,
+                tee_time: teeTime,
+                final_price: finalPrice,
+                crawl_status: 'SUCCESS',
+                availability_status: finalPrice ? 'AVAILABLE' : 'NO_DATA',
+                source_platform: 'WEB',
+                collection_window: horizon.window,
+                payload: {
+                  adapter: 'golfrock_list',
+                  priceText: priceRow.priceText,
+                  priceType,
+                  dateText: priceRow.dateText,
+                  clubDataValue: result.dataValue,
+                },
+              })
+            );
+          }
+        }
       }
 
-      const relativeMatch = row.onclick.match(/location\.replace\('([^']+)'\)/i);
-      const detailUrl = relativeMatch ? new URL(relativeMatch[1], listUrl).toString() : listUrl;
+      // 보조: tr[onclick*="join_view_new"] 테이블 행도 파싱 (양도 섹션)
+      const tableRows = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll('tr[onclick*="join_view_new"]')).map((tr) => {
+          const cells = Array.from(tr.querySelectorAll('td')).map((td) =>
+            (td.textContent || '').replace(/\s+/g, ' ').trim()
+          );
+          const onclick = tr.getAttribute('onclick') || '';
+          return { cells, onclick };
+        });
+      });
 
-      out.push(
-        buildBaseSnapshot(target, {
-          course_name: courseName || target.course_name,
-          source_url: detailUrl,
-          play_date: playDate,
-          tee_time: teeTime,
-          final_price: parsePrice(courseAndPrice),
-          crawl_status: 'SUCCESS',
-          availability_status: 'AVAILABLE',
-          source_platform: 'WEB',
-          payload: {
-            dateTime,
-            courseAndPrice,
-            onclick: row.onclick,
-            rawCells: row.cells,
-          },
-        })
-      );
+      for (const row of tableRows) {
+        const dateTime = row.cells[0] || '';
+        const courseAndPrice = row.cells[1] || '';
+
+        const dateMatch = dateTime.match(/(\d{1,2})\/(\d{1,2})\([^)]*\)\s*([0-2]?\d:[0-5]\d)/);
+        const playDate = dateMatch ? parseMonthDayToDate(`${dateMatch[1]}/${dateMatch[2]}`, now) : horizon.date;
+        const teeTime = dateMatch ? parseTeeTime(dateMatch[3]) : null;
+
+        const courseName = courseAndPrice
+          .replace(/([0-9]+(?:\.[0-9]+)?)\s*만/g, '')
+          .replace(/([0-9,]+)\s*원/g, '')
+          .trim();
+
+        if (!courseMatches(target.course_name, courseName)) {
+          continue;
+        }
+
+        out.push(
+          buildBaseSnapshot(target, {
+            course_name: courseName || target.course_name,
+            source_url: listUrl,
+            play_date: playDate,
+            tee_time: teeTime,
+            final_price: parsePrice(courseAndPrice),
+            crawl_status: 'SUCCESS',
+            availability_status: 'AVAILABLE',
+            source_platform: 'WEB',
+            collection_window: horizon.window,
+            payload: {
+              adapter: 'golfrock_list',
+              section: 'transfer_table',
+              dateTime,
+              courseAndPrice,
+            },
+          })
+        );
+      }
     }
 
     if (out.length === 0) {
-      const pageText = (await page.textContent('body')) || '';
-      const authRequired = /로그인시\s*확인가능|로그인|login/i.test(pageText);
       return {
         success: true,
         rows: [
           buildBaseSnapshot(target, {
             source_url: page.url(),
-            crawl_status: authRequired ? 'SUCCESS' : 'FAILED',
-            availability_status: authRequired ? 'AUTH_REQUIRED' : 'NO_DATA',
+            crawl_status: 'SUCCESS',
+            availability_status: 'NO_DATA',
             source_platform: 'WEB',
-            error_message: authRequired
-              ? 'Price/details require login'
-              : 'No matching listings found for target course',
-            payload: { adapter: 'golfrock_list' },
+            error_message: 'No matching listings found after login',
+            payload: { adapter: 'golfrock_list', login: 'success', windows: horizonDates.length },
           }),
         ],
       };
@@ -615,7 +810,7 @@ async function crawlGolfRockList(browser, target) {
   }
 }
 
-async function crawlTeeupNjoyApi(browser, target, args) {
+async function crawlTeeupNjoyApi(_browser, target, args) {
   const parserConfig = parseParserConfig(target);
   const clubIdsRaw = Array.isArray(parserConfig.club_ids)
     ? parserConfig.club_ids
@@ -626,8 +821,9 @@ async function crawlTeeupNjoyApi(browser, target, args) {
     .map((value) => Number(value))
     .filter((value) => Number.isFinite(value) && value > 0);
   const joinType = parserConfig.join_type || 'join';
-  const page = await browser.newPage();
   const desiredWindows = args.window ? [args.window] : COLLECTION_WINDOWS;
+  const baseListUrl = target.url || 'https://www.teeupnjoy.com/hp/join/reslist.do';
+  const apiUrl = new URL('/hp/join/hpJoinTeeTimeSearchClub.do', baseListUrl).toString();
 
   if (clubIds.length === 0) {
     return {
@@ -650,51 +846,68 @@ async function crawlTeeupNjoyApi(browser, target, args) {
     const horizonDates = buildHorizonDates(new Date()).filter((item) => desiredWindows.includes(item.window));
 
     for (const horizon of horizonDates) {
-      const listUrl = appendQueryParam(
-        target.url || 'https://www.teeupnjoy.com/hp/join/reslist.do',
-        'bookingDay',
-        formatYyyymmdd(horizon.date)
-      );
-
-      await page.goto(listUrl, {
-        waitUntil: 'domcontentloaded',
-        timeout: 60000,
-      });
+      const bookingDay = formatYyyymmdd(horizon.date);
+      const listUrl = appendQueryParam(baseListUrl, 'bookingDay', bookingDay);
 
       for (const clubId of clubIds) {
-        const jsonResponse = await page.evaluate(
-          async ({ bookingDay, clubIdValue, joinTypeValue }) => {
-            const params = new URLSearchParams();
-            params.set('trgetTcYn', 'Y');
-            params.set('bookingDay', bookingDay);
-            params.set('bookingEndDay', bookingDay);
-            params.set('clubId', String(clubIdValue));
-            params.set('joinType', joinTypeValue);
+        const params = new URLSearchParams();
+        params.set('trgetTcYn', 'Y');
+        params.set('bookingDay', bookingDay);
+        params.set('bookingEndDay', bookingDay);
+        params.set('clubId', String(clubId));
+        params.set('joinType', joinType);
 
-            const response = await fetch('/hp/join/hpJoinTeeTimeSearchClub.do', {
-              method: 'POST',
-              headers: {
-                'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-              },
-              body: params.toString(),
-              credentials: 'include',
-            });
+        let responseText = '';
+        let json = null;
+        try {
+          const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              referer: listUrl,
+              origin: new URL(baseListUrl).origin,
+              'user-agent': 'TUGOL-PriceCrawler/1.0',
+              accept: 'application/json, text/plain, */*',
+            },
+            body: params.toString(),
+            signal: AbortSignal.timeout(15000),
+          });
 
-            const text = await response.text();
-            try {
-              return { ok: true, json: JSON.parse(text) };
-            } catch {
-              return { ok: false, text: text.slice(0, 500) };
-            }
-          },
-          {
-            bookingDay: formatYyyymmdd(horizon.date),
-            clubIdValue: clubId,
-            joinTypeValue: joinType,
+          responseText = await response.text();
+          if (!response.ok) {
+            out.push(
+              buildBaseSnapshot(target, {
+                source_url: listUrl,
+                play_date: horizon.date,
+                crawl_status: 'FAILED',
+                availability_status: 'FAILED',
+                source_platform: 'WEB',
+                collection_window: horizon.window,
+                error_message: `teeupnjoy HTTP ${response.status}`,
+                payload: { club_id: clubId, response_head: responseText.slice(0, 500) },
+              })
+            );
+            continue;
           }
-        );
+        } catch (error) {
+          out.push(
+            buildBaseSnapshot(target, {
+              source_url: listUrl,
+              play_date: horizon.date,
+              crawl_status: 'FAILED',
+              availability_status: 'FAILED',
+              source_platform: 'WEB',
+              collection_window: horizon.window,
+              error_message: error instanceof Error ? error.message : 'teeupnjoy request failed',
+              payload: { club_id: clubId, reason: 'request_failed' },
+            })
+          );
+          continue;
+        }
 
-        if (!jsonResponse.ok) {
+        try {
+          json = JSON.parse(responseText);
+        } catch {
           out.push(
             buildBaseSnapshot(target, {
               source_url: listUrl,
@@ -704,13 +917,12 @@ async function crawlTeeupNjoyApi(browser, target, args) {
               source_platform: 'WEB',
               collection_window: horizon.window,
               error_message: 'Failed to parse teeupnjoy response',
-              payload: { club_id: clubId, response_head: jsonResponse.text },
+              payload: { club_id: clubId, response_head: responseText.slice(0, 500) },
             })
           );
           continue;
         }
 
-        const json = jsonResponse.json;
         if (!json.success) {
           out.push(
             buildBaseSnapshot(target, {
@@ -727,7 +939,7 @@ async function crawlTeeupNjoyApi(browser, target, args) {
           continue;
         }
 
-        const rows = (json.resultList && json.resultList[formatYyyymmdd(horizon.date)]) || [];
+        const rows = (json.resultList && json.resultList[bookingDay]) || [];
         for (const item of rows) {
           const courseName = item.prName || target.course_name;
           if (!courseMatches(target.course_name, courseName)) {
@@ -789,8 +1001,6 @@ async function crawlTeeupNjoyApi(browser, target, args) {
         }),
       ],
     };
-  } finally {
-    await page.close();
   }
 }
 
@@ -862,7 +1072,7 @@ async function crawlTarget(browser, target, args) {
     return crawlGolfPangList(browser, target, args);
   }
   if (adapterCode.includes('golfrock')) {
-    return crawlGolfRockList(browser, target);
+    return crawlGolfRockList(browser, target, args);
   }
   if (adapterCode.includes('teeup')) {
     return crawlTeeupNjoyApi(browser, target, args);
@@ -926,6 +1136,12 @@ async function main() {
         summary.success += 1;
       } else {
         summary.failed += 1;
+        const firstError = Array.isArray(crawled.rows)
+          ? crawled.rows.find((row) => row && row.error_message)?.error_message
+          : null;
+        if (firstError) {
+          console.error(`[${target.id}] Crawl failed detail: ${firstError}`);
+        }
       }
       summary.rows += rowsToSave.length;
 
