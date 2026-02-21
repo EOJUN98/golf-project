@@ -166,6 +166,14 @@ function classifyCollectionWindow(playDate, teeTime, now = new Date()) {
   return null;
 }
 
+function isImminentWithin3Hours(playDate, teeTime, now = new Date()) {
+  if (!playDate || !teeTime) return false;
+  const teeAt = new Date(`${playDate}T${teeTime}:00+09:00`);
+  if (Number.isNaN(teeAt.getTime())) return false;
+  const hoursUntil = (teeAt.getTime() - now.getTime()) / (1000 * 60 * 60);
+  return hoursUntil >= 0 && hoursUntil <= 3;
+}
+
 function classifyDayPart(teeTime) {
   if (!teeTime) return null;
   const [hourRaw] = teeTime.split(':');
@@ -450,12 +458,17 @@ async function crawlGolfPangList(browser, target, args) {
           continue;
         }
 
+        const teeTime = parseTeeTime(row.teeTimeText);
+        if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(horizon.date, teeTime, now)) {
+          continue;
+        }
+
         out.push(
           buildBaseSnapshot(target, {
             course_name: row.courseNameText || target.course_name,
             source_url: page.url(),
             play_date: horizon.date,
-            tee_time: parseTeeTime(row.teeTimeText),
+            tee_time: teeTime,
             final_price: parsePrice(row.finalPriceText),
             crawl_status: 'SUCCESS',
             availability_status: row.finalPriceText ? 'AVAILABLE' : 'NO_DATA',
@@ -699,6 +712,9 @@ async function crawlGolfRockList(browser, target, args) {
             const playDate = parseMonthDayToDate(priceRow.dateText, now) || horizon.date;
             const priceType = /선입/.test(priceRow.priceText) ? 'prepaid' : 'onsite';
             const teeTime = parseTeeTime(priceRow.teeTime);
+            if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(playDate, teeTime, now)) {
+              continue;
+            }
 
             out.push(
               buildBaseSnapshot(target, {
@@ -742,6 +758,9 @@ async function crawlGolfRockList(browser, target, args) {
         const dateMatch = dateTime.match(/(\d{1,2})\/(\d{1,2})\([^)]*\)\s*([0-2]?\d:[0-5]\d)/);
         const playDate = dateMatch ? parseMonthDayToDate(`${dateMatch[1]}/${dateMatch[2]}`, now) : horizon.date;
         const teeTime = dateMatch ? parseTeeTime(dateMatch[3]) : null;
+        if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(playDate, teeTime, now)) {
+          continue;
+        }
 
         const courseName = courseAndPrice
           .replace(/([0-9]+(?:\.[0-9]+)?)\s*만/g, '')
@@ -843,7 +862,8 @@ async function crawlTeeupNjoyApi(_browser, target, args) {
 
   try {
     const out = [];
-    const horizonDates = buildHorizonDates(new Date()).filter((item) => desiredWindows.includes(item.window));
+    const now = new Date();
+    const horizonDates = buildHorizonDates(now).filter((item) => desiredWindows.includes(item.window));
 
     for (const horizon of horizonDates) {
       const bookingDay = formatYyyymmdd(horizon.date);
@@ -949,19 +969,51 @@ async function crawlTeeupNjoyApi(_browser, target, args) {
           const teeTime = item.bookingTime
             ? `${String(item.bookingTime).slice(0, 2)}:${String(item.bookingTime).slice(2, 4)}`
             : null;
+          const playDate = parseYyyymmdd(item.bookingDay) || horizon.date;
+          if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(playDate, teeTime, now)) {
+            continue;
+          }
+          const finalPrice = (() => {
+            const candidates = [
+              item.bookDiscount,
+              item.bookPrice,
+              item.salePrice,
+              item.normalPrice,
+              item.bookNormal,
+              item.price,
+            ];
+            for (const candidate of candidates) {
+              const parsed = parsePrice(candidate);
+              if (parsed && parsed > 0) return parsed;
+            }
+            return null;
+          })();
 
           out.push(
             buildBaseSnapshot(target, {
               course_name: courseName,
               source_url: listUrl,
-              play_date: parseYyyymmdd(item.bookingDay) || horizon.date,
+              play_date: playDate,
               tee_time: parseTeeTime(teeTime),
-              final_price: parsePrice(item.bookDiscount),
+              final_price: finalPrice,
               crawl_status: 'SUCCESS',
-              availability_status: item.bookDiscount ? 'AVAILABLE' : 'NO_DATA',
+              availability_status: finalPrice ? 'AVAILABLE' : 'NO_DATA',
               source_platform: 'WEB',
               collection_window: horizon.window,
-              payload: { club_id: clubId, ...item },
+              payload: {
+                club_id: clubId,
+                price_source: finalPrice
+                  ? (
+                    parsePrice(item.bookDiscount) ? 'bookDiscount'
+                      : parsePrice(item.bookPrice) ? 'bookPrice'
+                        : parsePrice(item.salePrice) ? 'salePrice'
+                          : parsePrice(item.normalPrice) ? 'normalPrice'
+                            : parsePrice(item.bookNormal) ? 'bookNormal'
+                              : 'price'
+                  )
+                  : null,
+                ...item,
+              },
             })
           );
         }
@@ -1067,6 +1119,7 @@ function postProcessRows(target, rows, args) {
 
 async function crawlTarget(browser, target, args) {
   const adapterCode = (target.adapter_code || target.site_code || 'generic_single').toLowerCase();
+  const desiredWindows = args.window ? [args.window] : COLLECTION_WINDOWS;
 
   if (adapterCode.includes('golfpang')) {
     return crawlGolfPangList(browser, target, args);
@@ -1078,17 +1131,21 @@ async function crawlTarget(browser, target, args) {
     return crawlTeeupNjoyApi(browser, target, args);
   }
   if (adapterCode.includes('golfmon') || adapterCode.includes('smartscore')) {
+    const horizons = buildHorizonDates(new Date()).filter((item) => desiredWindows.includes(item.window));
     return {
       success: true,
-      rows: [
-        buildBaseSnapshot(target, {
+      rows: horizons.map((horizon) => buildBaseSnapshot(target, {
+          play_date: horizon.date,
+          collection_window: horizon.window,
           crawl_status: 'SUCCESS',
           availability_status: 'AUTH_REQUIRED',
           source_platform: target.source_platform || 'APP',
           error_message: 'App source requires authenticated app/API integration',
-          payload: { adapter: adapterCode },
-        }),
-      ],
+          payload: {
+            adapter: adapterCode,
+            reason: 'app_auth_required',
+          },
+        })),
     };
   }
   return crawlGenericSingle(browser, target);

@@ -1835,3 +1835,25 @@
 - 검증:
   - `npm run lint` 통과
   - `npm run build` 통과
+
+### 2026-02-21 86차 기록 (Crawler 정밀도 튜닝 1차: AUTH_REQUIRED 분류/IMMINENT 필터 강화)
+- 작업:
+  - `crawler/src/crawl-final-prices.mjs` 정밀도 보강
+  - 보강 1) 앱 소스(`golfmon`, `smartscore`) 분류 보정
+    - 기존: 후처리에서 `AUTH_REQUIRED` row가 소실되고 `IMMINENT_3H` 기본 `NO_DATA`로 기록되는 케이스 존재
+    - 수정: adapter 단계에서 각 window별 `AUTH_REQUIRED` row를 명시 생성(`collection_window`/`play_date` 포함)
+  - 보강 2) `IMMINENT_3H` 실제 시간 필터 추가
+    - `golfpang`, `golfrock`, `teeupnjoy`에서 임박 창은 `<= 3시간` 티타임만 포함
+  - 보강 3) teeup 가격 필드 fallback 확장
+    - `bookDiscount` 외 `bookPrice/salePrice/normalPrice/bookNormal/price` 순 fallback
+    - payload에 `price_source` 기록
+- 변경 파일:
+  - `crawler/src/crawl-final-prices.mjs`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 검증:
+  - `npm --prefix crawler run check` 통과
+  - 주의: sandbox 네트워크 제한으로 로컬 dry-run 실DB 조회는 `fetch failed` 발생(코드 정적 검증 중심)
+- 기대 효과:
+  - 앱 소스의 오분류(`NO_DATA`)를 `AUTH_REQUIRED`로 정규화
+  - 임박 창의 false-positive 행 감소(실제 3시간 내 티타임 중심)
