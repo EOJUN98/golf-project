@@ -7,6 +7,7 @@
   - 클럽/날짜 필터가 안정적으로 동작(타임존 이슈로 하루 밀림 없음)
   - BOOKED 티타임은 서버에서 수정/차단이 거부된다
   - 변경은 모두 감사필드(updated_by/updated_at)와 함께 기록된다
+  - Admin에서 추가/수정한 티타임이 DB(`tee_times`)에 즉시 반영된다
 
 ## Roles / Permissions
 
@@ -27,17 +28,17 @@
 ## API / Server Actions
 
 - Read:
-  - `getAccessibleGolfClubs()`
-  - `getTeeTimes(golfClubId, dateYmd)`
+  - `getAccessibleGolfClubs()` (Server Action 유지)
+  - `GET /api/admin/tee-times?clubId=&date=YYYY-MM-DD`
 - Write:
-  - `createTeeTime()`
-  - `updateTeeTime()`
-  - `blockTeeTime()`
-  - `unblockTeeTime()`
+  - `POST /api/admin/tee-times`
+  - `PATCH /api/admin/tee-times/:id`
+  - `DELETE /api/admin/tee-times/:id`
+  - (호환) `PATCH /api/admin/tee-times` action 기반 업데이트
+  - 모든 write는 서버 경유로 수행하고, 성공 시 DB 반영 여부를 응답으로 확인한다.
 
 ## UI States
 
 - loading: clubs/teeTimes 로딩 분리
 - empty: “선택한 날짜에 티타임이 없습니다”
 - error: 권한/설정/서버 에러 메시지 표준화
-

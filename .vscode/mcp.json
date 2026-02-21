@@ -1,0 +1,27 @@
+{
+	"servers": {
+		"testsprite": {
+			"type": "stdio",
+			"command": "npx",
+			"args": [
+				"-y",
+				"@testsprite/testsprite-mcp@latest"
+			],
+			"env": {
+				"API_KEY": "${input:testsprite-api-key}"
+			}
+		},
+		"supabase": {
+			"type": "http",
+			"url": "https://mcp.supabase.com/mcp?project_ref=rgbwzpwrbcppdydihxye"
+		}
+	},
+	"inputs": [
+		{
+			"type": "promptString",
+			"id": "testsprite-api-key",
+			"description": "TestSprite API Key",
+			"password": true
+		}
+	]
+}

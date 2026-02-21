@@ -11,4 +11,7 @@
 - `docs/sdd/v1.0/01-admin/permissions-matrix.md`
 - `docs/sdd/v1.0/01-admin/admin-dashboard.md`
 - `docs/sdd/v1.0/01-admin/admin-tee-times.md`
-
+- `docs/sdd/v1.0/01-admin/admin-reservations.md`
+- `docs/sdd/v1.0/01-admin/admin-no-show.md`
+- `docs/sdd/v1.0/01-admin/admin-settlements.md`
+- `docs/sdd/v1.0/01-admin/admin-crawler.md`

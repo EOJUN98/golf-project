@@ -2,48 +2,68 @@
 
 ## Project Overview
 
-This is a Next.js application for a golf tee-time booking service named "TUGOL". The application provides real-time tee-time availability and dynamic pricing. It's built with a modern stack including Next.js for the frontend, Supabase for the backend, and integrated with Toss Payments for processing payments.
+TUGOL is a Next.js application for a golf tee-time booking service, featuring real-time availability, dynamic pricing, and a user segmentation system.
 
-### Key Technologies:
-- **Framework**: Next.js (React)
-- **Styling**: Tailwind CSS
-- **Backend**: Supabase (PostgreSQL database, auth)
-- **Payments**: Toss Payments
-- **Languages**: TypeScript
+### Key Technologies
+- **Frontend**: Next.js 14+ (React), Tailwind CSS
+- **Backend**: Supabase (PostgreSQL, Auth, Realtime)
+- **Payments**: Toss Payments (Virtual payment mode implemented for dev)
+- **Language**: TypeScript
 
-### Architecture:
-- The frontend is a client-rendered React application built with Next.js.
-- The backend logic is handled by API routes in the `app/api` directory, which interact with a Supabase database.
-- The application features a dynamic pricing engine (`utils/pricingEngine.ts`) that calculates discounts based on various factors like weather, time, and user data.
-- User data, tee times, and reservations are stored in a Supabase Postgres database, with types defined in `types/database.ts`.
+## 🚀 Current Status (As of Jan 20, 2026)
 
-## Building and Running
+### Operational Status
+- **Supabase Migration**: Migration chain has been cleaned up and made idempotent. `supabase db push` should work, but there are issues with the Auth schema permissions.
+- **Time Zone**: KST (Korea Standard Time) handling has been fixed in Admin dashboard and tee-time generation (9-hour offset correction).
+- **Authentication**: **CRITICAL ISSUE**. Supabase Auth (`signInWithPassword`, `signUp`) is currently failing due to internal permission/configuration issues on the remote Supabase project.
 
-To get the development environment running, follow these steps:
+### Feature Status (SDD-10 Complete)
+The codebase now includes the implementation for **SDD-10** (System Design Document 10), adding:
+1.  **No-Show Prevention**: Risk scoring based on history, penalty agreements, and booking restrictions.
+2.  **User Segmentation**: Automatic `PRESTIGE`, `SMART`, `CHERRY`, `FUTURE` tiering based on RFM and loyalty.
+3.  **Data-Driven Discounts**: Pricing adjustments based on vacancy rates, booking velocity, and segment synergy.
+4.  **Virtual Payment**: A dev-friendly payment mode skipping the real PG for easier testing.
+5.  **My Page**: Enhanced user dashboard with Profile, Reservation Details, and Statistics tabs.
 
-1.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+## 📂 Key Recent Changes
 
-2.  **Run the development server:**
-    ```bash
-    npm run dev
-    ```
+### Database (`supabase/migrations/`)
+- `20260117_sdd10_noshow_segments_datadiscounts.sql`: Major schema update for SDD-10.
+- `20260119_rls_recursion_fix.sql`: Fix for infinite recursion in RLS policies.
+- `20260114_base_schema.sql`: Consolidated base schema.
 
-    The application will be available at [http://localhost:3000](http://localhost:3000).
+### Logic & Actions
+- **Pricing**: `utils/pricingEngineSDD10.ts` (New data-driven engine).
+- **Server Actions**: `app/actions/sdd10-actions.ts` (Risk calc, Virtual payment, Segment recalc).
+- **Admin**: `app/admin/tee-times/` updated for KST.
+- **Auth**: `lib/supabase/server.ts` and `app/login/actions.ts` standardized.
 
-### Key Scripts:
-- `npm run dev`: Starts the development server.
-- `npm run build`: Creates a production build.
-- `npm run start`: Starts the production server.
-- `npm run lint`: Lints the codebase using ESLint.
+## ⚠️ Known Issues
 
-## Development Conventions
+1.  **Supabase Auth Failure**:
+    - `signInWithPassword` returns `invalid_credentials`.
+    - `signUp` fails with database errors regarding email checking.
+    - Likely requires Supabase support intervention or a fresh project instance.
 
-- **Coding Style**: The project uses TypeScript and follows standard React/Next.js conventions. Code is formatted according to the rules in `.eslintrc.json`.
-- **Component Structure**: Reusable components are located in the `components` directory.
-- **API Routes**: Server-side logic is handled in API routes within `app/api`.
-- **Database**: The database schema and types are defined in `types/database.ts`. All database interactions go through the Supabase client in `lib/supabase.ts`.
-- **Pricing Logic**: All dynamic pricing logic is centralized in `utils/pricingEngine.ts`.
-- **Supabase Queries**: Reusable Supabase queries are located in `utils/supabase/queries.ts`.
+## 📅 Next Steps
+
+1.  **Resolve Auth**: Contact Supabase support or provision a new Supabase project and re-apply migrations.
+2.  **Database Sync**: Run `supabase db push` to apply the SDD-10 schema (`20260117...`).
+3.  **Verification**:
+    - Test Virtual Payment flow (`createVirtualReservation`).
+    - Verify User Segmentation logic (`recalculateUserSegment`).
+    - Check "My Page" UI components.
+
+## Development Reference
+
+### Build & Run
+```bash
+npm install
+npm run dev
+# App: http://localhost:3000
+```
+
+### Conventions
+- **Pricing**: Logic in `utils/pricingEngine*.ts`.
+- **DB Types**: `types/database.ts` (Base), `types/sdd10-database.ts` (New features).
+- **Styling**: Tailwind CSS.
