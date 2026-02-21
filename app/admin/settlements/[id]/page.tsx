@@ -4,25 +4,52 @@
  * Display detailed settlement information with status management
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { redirect } from 'next/navigation';
 import { SettlementDetail, SettlementReservationItem } from '@/types/settlement';
 import SettlementDetailView from '@/components/admin/SettlementDetailView';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id);
+}
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+async function getSettlementsSupabase() {
+  const adminClient = createSupabaseAdminClientOptional();
+  return adminClient ?? await createSupabaseServerClient();
+}
+
+type SettlementsViewer = NonNullable<Awaited<ReturnType<typeof getCurrentUserWithRoles>>>;
+
+function canViewSettlementConsole(user: Awaited<ReturnType<typeof getCurrentUserWithRoles>>): user is SettlementsViewer {
+  return Boolean(user && (user.isSuperAdmin || user.isAdmin || user.isClubAdmin));
+}
+
+function hasGlobalSettlementAccess(user: SettlementsViewer) {
+  return user.isSuperAdmin || user.isAdmin;
+}
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-async function getSettlementDetail(settlementId: string): Promise<SettlementDetail | null> {
+async function getSettlementDetail(
+  supabase: Awaited<ReturnType<typeof getSettlementsSupabase>>,
+  settlementId: string,
+  viewer: SettlementsViewer
+): Promise<SettlementDetail | null> {
   try {
+    if (!isValidUUID(settlementId)) {
+      return null;
+    }
+
     // Fetch settlement with relations
-    const { data: settlement, error: settlementError } = await supabase
+    let settlementQuery = supabase
       .from('settlements')
       .select(`
         *,
@@ -31,11 +58,19 @@ async function getSettlementDetail(settlementId: string): Promise<SettlementDeta
         confirmed_by_user:users!settlements_confirmed_by_user_id_fkey(id, email, name),
         locked_by_user:users!settlements_locked_by_user_id_fkey(id, email, name)
       `)
-      .eq('id', settlementId)
-      .single();
+      .eq('id', settlementId);
+
+    if (!hasGlobalSettlementAccess(viewer)) {
+      const clubIds = viewer.clubIds.length > 0 ? viewer.clubIds : [-1];
+      settlementQuery = settlementQuery.in('golf_club_id', clubIds);
+    }
+
+    const { data: settlement, error: settlementError } = await settlementQuery.single();
 
     if (settlementError || !settlement) {
-      console.error('[getSettlementDetail] Settlement error:', settlementError);
+      if (settlementError && settlementError.code !== 'PGRST116') {
+        console.error('[getSettlementDetail] Settlement error:', settlementError);
+      }
       return null;
     }
 
@@ -117,10 +152,14 @@ async function getSettlementDetail(settlementId: string): Promise<SettlementDeta
       }
     );
 
-    // Determine permissions (simplified - in production use real auth)
-    const canConfirm = settlement.status === 'DRAFT';
-    const canLock = settlement.status === 'CONFIRMED';
-    const canEdit = settlement.status !== 'LOCKED';
+    // Resolve action permissions for current viewer role.
+    const canConfirm =
+      settlement.status === 'DRAFT' &&
+      (viewer.isSuperAdmin || viewer.isAdmin || viewer.isClubAdmin);
+    const canLock = settlement.status === 'CONFIRMED' && viewer.isSuperAdmin;
+    const canEdit =
+      settlement.status !== 'LOCKED' &&
+      (viewer.isSuperAdmin || viewer.isAdmin || viewer.isClubAdmin);
 
     return {
       settlement,
@@ -163,7 +202,27 @@ async function getSettlementDetail(settlementId: string): Promise<SettlementDeta
 
 export default async function SettlementDetailPage({ params }: PageProps) {
   const resolvedParams = await params;
-  const detail = await getSettlementDetail(resolvedParams.id);
+  const viewer = await getCurrentUserWithRoles();
+  if (!viewer) {
+    redirect(`/login?redirect=/admin/settlements/${resolvedParams.id}`);
+  }
+  if (!canViewSettlementConsole(viewer)) {
+    redirect('/forbidden');
+  }
+
+  if (!isValidUUID(resolvedParams.id)) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">정산을 찾을 수 없습니다</h1>
+          <p className="text-gray-600">유효하지 않은 정산 ID입니다</p>
+        </div>
+      </div>
+    );
+  }
+
+  const supabase = await getSettlementsSupabase();
+  const detail = await getSettlementDetail(supabase, resolvedParams.id, viewer);
 
   if (!detail) {
     return (

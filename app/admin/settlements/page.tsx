@@ -4,17 +4,30 @@
  * Display all settlements with filtering and summary statistics
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { redirect } from 'next/navigation';
 import { SettlementListRow, SettlementFilters } from '@/types/settlement';
 import SettlementsList from '@/components/admin/SettlementsList';
 import { TrendingUp, DollarSign, Building, Lock } from 'lucide-react';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+async function getSettlementsSupabase() {
+  const adminClient = createSupabaseAdminClientOptional();
+  return adminClient ?? await createSupabaseServerClient();
+}
+
+type SettlementsViewer = NonNullable<Awaited<ReturnType<typeof getCurrentUserWithRoles>>>;
+
+function canViewSettlementConsole(user: Awaited<ReturnType<typeof getCurrentUserWithRoles>>): user is SettlementsViewer {
+  return Boolean(user && (user.isSuperAdmin || user.isAdmin || user.isClubAdmin));
+}
+
+function hasGlobalSettlementAccess(user: SettlementsViewer) {
+  return user.isSuperAdmin || user.isAdmin;
+}
 
 interface PageProps {
   searchParams: Promise<{
@@ -27,12 +40,21 @@ interface PageProps {
   }>;
 }
 
-async function getSettlements(filters: SettlementFilters): Promise<SettlementListRow[]> {
+async function getSettlements(
+  supabase: Awaited<ReturnType<typeof getSettlementsSupabase>>,
+  filters: SettlementFilters,
+  viewer: SettlementsViewer
+): Promise<SettlementListRow[]> {
   try {
     let query = supabase
       .from('settlement_summary')
       .select('*')
       .order('created_at', { ascending: false });
+
+    if (!hasGlobalSettlementAccess(viewer)) {
+      const clubIds = viewer.clubIds.length > 0 ? viewer.clubIds : [-1];
+      query = query.in('golf_club_id', clubIds);
+    }
 
     // Apply filters
     if (filters.golf_club_id) {
@@ -74,19 +96,39 @@ async function getSettlements(filters: SettlementFilters): Promise<SettlementLis
   }
 }
 
-async function getGolfClubs() {
-  const { data } = await supabase
+async function getGolfClubsWithClient(
+  supabase: Awaited<ReturnType<typeof getSettlementsSupabase>>,
+  viewer: SettlementsViewer
+) {
+  let query = supabase
     .from('golf_clubs')
     .select('id, name')
     .order('name');
+
+  if (!hasGlobalSettlementAccess(viewer)) {
+    const clubIds = viewer.clubIds.length > 0 ? viewer.clubIds : [-1];
+    query = query.in('id', clubIds);
+  }
+
+  const { data } = await query;
   return data || [];
 }
 
-async function getSettlementStats() {
+async function getSettlementStats(
+  supabase: Awaited<ReturnType<typeof getSettlementsSupabase>>,
+  viewer: SettlementsViewer
+) {
   try {
-    const { data: settlements } = await supabase
+    let query = supabase
       .from('settlements')
       .select('status, gross_amount, platform_fee, club_payout');
+
+    if (!hasGlobalSettlementAccess(viewer)) {
+      const clubIds = viewer.clubIds.length > 0 ? viewer.clubIds : [-1];
+      query = query.in('golf_club_id', clubIds);
+    }
+
+    const { data: settlements } = await query;
 
     if (!settlements) {
       return {
@@ -126,20 +168,32 @@ async function getSettlementStats() {
 }
 
 export default async function SettlementsListPage({ searchParams }: PageProps) {
+  const viewer = await getCurrentUserWithRoles();
+  if (!viewer) {
+    redirect('/login?redirect=/admin/settlements');
+  }
+  if (!canViewSettlementConsole(viewer)) {
+    redirect('/forbidden');
+  }
+
+  const supabase = await getSettlementsSupabase();
   const resolvedParams = await searchParams;
+  const golfClubId = resolvedParams.golf_club_id ? Number(resolvedParams.golf_club_id) : undefined;
+  const year = resolvedParams.year ? Number(resolvedParams.year) : undefined;
+  const month = resolvedParams.month ? Number(resolvedParams.month) : undefined;
 
   const filters: SettlementFilters = {
-    golf_club_id: resolvedParams.golf_club_id ? parseInt(resolvedParams.golf_club_id) : undefined,
+    golf_club_id: Number.isInteger(golfClubId) && golfClubId && golfClubId > 0 ? golfClubId : undefined,
     status: (resolvedParams.status as any) || 'ALL',
-    year: resolvedParams.year ? parseInt(resolvedParams.year) : undefined,
-    month: resolvedParams.month ? parseInt(resolvedParams.month) : undefined,
+    year: Number.isInteger(year) && year ? year : undefined,
+    month: Number.isInteger(month) && month ? month : undefined,
     period_start: resolvedParams.period_start,
     period_end: resolvedParams.period_end
   };
 
-  const settlements = await getSettlements(filters);
-  const golfClubs = await getGolfClubs();
-  const stats = await getSettlementStats();
+  const settlements = await getSettlements(supabase, filters, viewer);
+  const golfClubs = await getGolfClubsWithClient(supabase, viewer);
+  const stats = await getSettlementStats(supabase, viewer);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

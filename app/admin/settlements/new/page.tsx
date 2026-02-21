@@ -4,26 +4,58 @@
  * Multi-step wizard for creating new settlements
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { redirect } from 'next/navigation';
 import SettlementWizard from '@/components/admin/SettlementWizard';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { getCurrentUserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
 
 export const dynamic = 'force-dynamic';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+async function getSettlementsSupabase() {
+  const adminClient = createSupabaseAdminClientOptional();
+  return adminClient ?? await createSupabaseServerClient();
+}
 
-async function getGolfClubs() {
-  const { data } = await supabase
+type SettlementsViewer = NonNullable<Awaited<ReturnType<typeof getCurrentUserWithRoles>>>;
+
+function canViewSettlementConsole(user: Awaited<ReturnType<typeof getCurrentUserWithRoles>>): user is SettlementsViewer {
+  return Boolean(user && (user.isSuperAdmin || user.isAdmin || user.isClubAdmin));
+}
+
+function hasGlobalSettlementAccess(user: SettlementsViewer) {
+  return user.isSuperAdmin || user.isAdmin;
+}
+
+async function getGolfClubs(
+  supabase: Awaited<ReturnType<typeof getSettlementsSupabase>>,
+  viewer: SettlementsViewer
+) {
+  let query = supabase
     .from('golf_clubs')
     .select('id, name, location_name')
     .order('name');
+
+  if (!hasGlobalSettlementAccess(viewer)) {
+    const clubIds = viewer.clubIds.length > 0 ? viewer.clubIds : [-1];
+    query = query.in('id', clubIds);
+  }
+
+  const { data } = await query;
   return data || [];
 }
 
 export default async function NewSettlementPage() {
-  const golfClubs = await getGolfClubs();
+  const viewer = await getCurrentUserWithRoles();
+  if (!viewer) {
+    redirect('/login?redirect=/admin/settlements/new');
+  }
+  if (!canViewSettlementConsole(viewer)) {
+    redirect('/forbidden');
+  }
+
+  const supabase = await getSettlementsSupabase();
+  const golfClubs = await getGolfClubs(supabase, viewer);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

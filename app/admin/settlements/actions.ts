@@ -7,7 +7,6 @@
 
 'use server';
 
-import { createClient } from '@supabase/supabase-js';
 import { calculateSettlementPreview } from '@/utils/settlementCalculations';
 import {
   PreviewSettlementRequest,
@@ -21,12 +20,60 @@ import {
   SettlementPermissions,
   DEFAULT_SETTLEMENT_CONFIG
 } from '@/types/settlement';
-import { getCurrentUserWithRoles, requireAdminAccess, requireClubAccess, requireSuperAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
+import { getCurrentUserWithRoles, requireClubAccess, type UserWithRoles } from '@/lib/auth/getCurrentUserWithRoles';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id);
+}
+
+async function getSettlementSupabase() {
+  const adminClient = createSupabaseAdminClientOptional();
+  return adminClient ?? await createSupabaseServerClient();
+}
+
+type SettlementActor = UserWithRoles;
+
+function canUseSettlementConsole(user: Awaited<ReturnType<typeof getCurrentUserWithRoles>>): user is SettlementActor {
+  return Boolean(user && (user.isSuperAdmin || user.isAdmin || user.isClubAdmin));
+}
+
+function hasGlobalSettlementAccess(user: SettlementActor) {
+  return user.isSuperAdmin || user.isAdmin;
+}
+
+async function requireSettlementActor(): Promise<SettlementActor> {
+  const user = await getCurrentUserWithRoles();
+  if (!user) {
+    throw new Error('UNAUTHORIZED');
+  }
+  if (!canUseSettlementConsole(user)) {
+    throw new Error('FORBIDDEN');
+  }
+  return user;
+}
+
+async function getMutableSettlementForActor(
+  supabase: Awaited<ReturnType<typeof getSettlementSupabase>>,
+  settlementId: string,
+  actor: SettlementActor
+) {
+  let query = supabase
+    .from('settlements')
+    .select('*')
+    .eq('id', settlementId);
+
+  if (!hasGlobalSettlementAccess(actor)) {
+    const clubIds = actor.clubIds.length > 0 ? actor.clubIds : [-1];
+    query = query.in('golf_club_id', clubIds);
+  }
+
+  const { data, error } = await query.single();
+  return { data, error };
+}
 
 // ============================================================================
 // Permission Checks
@@ -115,6 +162,7 @@ export async function previewSettlement(
 ): Promise<PreviewSettlementResponse> {
   try {
     const { golf_club_id, period_start, period_end, config } = request;
+    const supabase = await getSettlementSupabase();
 
     // Check club access for current session user
     try {
@@ -175,9 +223,10 @@ export async function createSettlement(
 ): Promise<CreateSettlementResponse> {
   try {
     const { golf_club_id, period_start, period_end, config, notes } = request;
+    const supabase = await getSettlementSupabase();
 
     // Get current session user
-    let currentUser;
+    let currentUser: SettlementActor;
     try {
       currentUser = await requireClubAccess(golf_club_id);
     } catch (error: any) {
@@ -323,13 +372,22 @@ export async function updateSettlementStatus(
   try {
     const { settlement_id, new_status, notes } = request;
 
+    if (!isValidUUID(settlement_id)) {
+      return {
+        success: false,
+        error: 'Invalid settlement_id',
+        message: '유효하지 않은 정산 ID입니다'
+      };
+    }
+
+    const supabase = await getSettlementSupabase();
+
     // Get current session user
-    let currentUser;
+    let currentUser: SettlementActor;
     try {
-      if (new_status === 'LOCKED') {
-        currentUser = await requireSuperAdminAccess();
-      } else {
-        currentUser = await requireAdminAccess();
+      currentUser = await requireSettlementActor();
+      if (new_status === 'LOCKED' && !currentUser.isSuperAdmin) {
+        throw new Error('SUPER_ADMIN_REQUIRED');
       }
     } catch (error: any) {
       return {
@@ -337,24 +395,24 @@ export async function updateSettlementStatus(
         error: error.message,
         message: error.message === 'UNAUTHORIZED'
           ? 'You must be logged in to update settlements'
-          : new_status === 'LOCKED'
+          : error.message === 'SUPER_ADMIN_REQUIRED'
           ? 'Only SUPER_ADMIN can lock settlements'
           : 'You do not have permission to update settlements'
       };
     }
 
     // Get current settlement
-    const { data: currentSettlement, error: fetchError } = await supabase
-      .from('settlements')
-      .select('*')
-      .eq('id', settlement_id)
-      .single();
+    const { data: currentSettlement, error: fetchError } = await getMutableSettlementForActor(
+      supabase,
+      settlement_id,
+      currentUser
+    );
 
     if (fetchError || !currentSettlement) {
       return {
         success: false,
-        error: 'Settlement not found',
-        message: 'Settlement does not exist'
+        error: 'Settlement not found or not accessible',
+        message: 'Settlement does not exist or you do not have access to it'
       };
     }
 
@@ -373,6 +431,14 @@ export async function updateSettlementStatus(
         success: false,
         error: 'Invalid status transition',
         message: 'Cannot revert CONFIRMED settlement to DRAFT'
+      };
+    }
+
+    if (currentStatus === 'DRAFT' && new_status === 'LOCKED') {
+      return {
+        success: false,
+        error: 'Invalid status transition',
+        message: 'Settlement must be CONFIRMED before LOCKED'
       };
     }
 
@@ -402,6 +468,7 @@ export async function updateSettlementStatus(
       .from('settlements')
       .update(updateData)
       .eq('id', settlement_id)
+      .eq('golf_club_id', currentSettlement.golf_club_id)
       .select()
       .single();
 
@@ -443,9 +510,20 @@ export async function updateSettlementNotes(
   try {
     const { settlement_id, notes } = request;
 
-    // Check admin access
+    if (!isValidUUID(settlement_id)) {
+      return {
+        success: false,
+        error: 'Invalid settlement_id',
+        message: '유효하지 않은 정산 ID입니다'
+      };
+    }
+
+    const supabase = await getSettlementSupabase();
+
+    // Check settlement access
+    let currentUser: SettlementActor;
     try {
-      await requireAdminAccess();
+      currentUser = await requireSettlementActor();
     } catch (error: any) {
       return {
         success: false,
@@ -457,17 +535,17 @@ export async function updateSettlementNotes(
     }
 
     // Get current settlement
-    const { data: currentSettlement } = await supabase
-      .from('settlements')
-      .select('status, notes')
-      .eq('id', settlement_id)
-      .single();
+    const { data: currentSettlement } = await getMutableSettlementForActor(
+      supabase,
+      settlement_id,
+      currentUser
+    );
 
     if (!currentSettlement) {
       return {
         success: false,
-        error: 'Settlement not found',
-        message: 'Settlement does not exist'
+        error: 'Settlement not found or not accessible',
+        message: 'Settlement does not exist or you do not have access to it'
       };
     }
 
@@ -483,7 +561,8 @@ export async function updateSettlementNotes(
     const { error: updateError } = await supabase
       .from('settlements')
       .update({ notes })
-      .eq('id', settlement_id);
+      .eq('id', settlement_id)
+      .eq('golf_club_id', currentSettlement.golf_club_id);
 
     if (updateError) {
       return {
