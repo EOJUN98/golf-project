@@ -50,6 +50,8 @@ export default function ReservationDetailClient({
 }: ReservationDetailClientProps) {
   const router = useRouter();
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const teeTime = reservation.tee_times;
   const golfClub = teeTime?.golf_clubs;
@@ -80,6 +82,51 @@ export default function ReservationDetailClient({
     if (severity === 'CRITICAL') return 'bg-red-100 text-red-700 border-red-300';
     if (severity === 'WARNING') return 'bg-yellow-100 text-yellow-700 border-yellow-300';
     return 'bg-blue-100 text-blue-700 border-blue-300';
+  };
+
+  const handleCancelReservation = async () => {
+    if (!reservation?.id || isCancelling) return;
+
+    setIsCancelling(true);
+    setCancelError(null);
+
+    try {
+      const response = await fetch('/api/reservations/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reservationId: reservation.id,
+          cancelReason: 'USER_REQUEST',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result?.success) {
+        const message =
+          result?.reason ||
+          result?.error ||
+          result?.message ||
+          '예약 취소 처리 중 오류가 발생했습니다.';
+        throw new Error(message);
+      }
+
+      const refundAmount =
+        typeof result.refundAmount === 'number'
+          ? result.refundAmount.toLocaleString()
+          : '0';
+
+      setShowCancelModal(false);
+      window.alert(`취소가 완료되었습니다.\n환불 예정 금액: ${refundAmount}원`);
+      router.push('/my/reservations');
+      router.refresh();
+    } catch (error) {
+      setCancelError(
+        error instanceof Error ? error.message : '예약 취소 처리 중 오류가 발생했습니다.'
+      );
+    } finally {
+      setIsCancelling(false);
+    }
   };
 
   return (
@@ -399,22 +446,27 @@ export default function ReservationDetailClient({
             </p>
             <div className="flex gap-3">
               <button
-                onClick={() => setShowCancelModal(false)}
-                className="flex-1 bg-gray-200 text-gray-900 py-3 rounded-xl font-bold hover:bg-gray-300"
+                onClick={() => {
+                  if (isCancelling) return;
+                  setCancelError(null);
+                  setShowCancelModal(false);
+                }}
+                disabled={isCancelling}
+                className="flex-1 bg-gray-200 text-gray-900 py-3 rounded-xl font-bold hover:bg-gray-300 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 닫기
               </button>
               <button
-                onClick={() => {
-                  // TODO: Implement cancellation API call
-                  setShowCancelModal(false);
-                  router.push('/my/reservations');
-                }}
-                className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700"
+                onClick={handleCancelReservation}
+                disabled={isCancelling}
+                className="flex-1 bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                확인
+                {isCancelling ? '처리 중...' : '확인'}
               </button>
             </div>
+            {cancelError && (
+              <p className="mt-3 text-sm text-red-600">{cancelError}</p>
+            )}
           </div>
         </div>
       )}

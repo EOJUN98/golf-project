@@ -67,7 +67,8 @@ export async function POST(req: NextRequest) {
     }
 
     // Step 3: Process payment refund (if refund amount > 0)
-    let refundResult = null;
+    let refundResult: { success: boolean; message: string } | null = null;
+    let refundStatus: 'pending' | 'failed' | 'not_required' = 'not_required';
     if (cancelResult.refundAmount && cancelResult.refundAmount > 0) {
       // Get payment key
       const { data: reservation } = await supabase
@@ -83,11 +84,18 @@ export async function POST(req: NextRequest) {
           cancelResult.refundAmount,
           reservation.payment_key
         );
+        refundStatus = refundResult.success ? 'pending' : 'failed';
 
         if (!refundResult.success) {
           // Log refund failure but don't fail the entire cancellation
           console.error('[POST /api/reservations/cancel] Refund failed:', refundResult.message);
         }
+      } else {
+        refundStatus = 'failed';
+        refundResult = {
+          success: false,
+          message: '결제 키가 없어 환불을 진행할 수 없습니다.',
+        };
       }
     }
 
@@ -96,8 +104,9 @@ export async function POST(req: NextRequest) {
       success: true,
       message: cancelResult.message,
       refundAmount: cancelResult.refundAmount,
-      refundStatus: refundResult?.success ? 'pending' : 'failed',
-      reservationId: cancelResult.reservationId
+      refundStatus,
+      refundMessage: refundResult?.message ?? null,
+      reservationId: cancelResult.reservationId,
     });
   } catch (error) {
     console.error('[POST /api/reservations/cancel] Error:', error);

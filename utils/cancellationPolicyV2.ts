@@ -519,8 +519,7 @@ export function getCancellationInfo(reservation: Reservation, teeTime: TeeTime):
 }
 
 /**
- * Process payment refund (to be implemented with PG integration)
- * This is a placeholder - actual PG refund logic goes here
+ * Process payment refund via Toss Payments cancel API.
  */
 export async function processPaymentRefund(
   reservationId: string,
@@ -528,31 +527,74 @@ export async function processPaymentRefund(
   paymentKey: string
 ): Promise<{ success: boolean; message: string }> {
   try {
-    // TODO: Implement actual PG refund logic
-    // Example with Toss Payments:
-    // const response = await fetch('https://api.tosspayments.com/v1/payments/{paymentKey}/cancel', {
-    //   method: 'POST',
-    //   headers: {
-    //     'Authorization': `Basic ${Buffer.from(TOSS_SECRET_KEY + ':').toString('base64')}`,
-    //     'Content-Type': 'application/json'
-    //   },
-    //   body: JSON.stringify({
-    //     cancelReason: 'User requested cancellation',
-    //     cancelAmount: refundAmount
-    //   })
-    // });
+    const tossSecretKey = process.env.TOSS_SECRET_KEY;
+    if (!tossSecretKey) {
+      return {
+        success: false,
+        message: '환불 설정 오류(TOSS_SECRET_KEY 누락)로 처리할 수 없습니다.',
+      };
+    }
 
-    console.log(`[processPaymentRefund] Refund requested: ${refundAmount}원 for reservation ${reservationId}`);
+    if (!paymentKey) {
+      return {
+        success: false,
+        message: '결제 키가 없어 환불을 진행할 수 없습니다.',
+      };
+    }
+
+    const cancelAmount = Math.max(0, Math.round(refundAmount));
+    const response = await fetch(
+      `https://api.tosspayments.com/v1/payments/${encodeURIComponent(paymentKey)}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${tossSecretKey}:`).toString('base64')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          cancelReason: 'User requested cancellation',
+          cancelAmount,
+        }),
+      }
+    );
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      const errorMessage =
+        payload?.message || payload?.code || `환불 요청 실패(${response.status})`;
+      console.error('[processPaymentRefund] Toss cancel failed:', {
+        reservationId,
+        paymentKey,
+        status: response.status,
+        payload,
+      });
+      return {
+        success: false,
+        message: errorMessage,
+      };
+    }
+
+    console.log('[processPaymentRefund] Toss cancel requested:', {
+      reservationId,
+      cancelAmount,
+      paymentKey,
+    });
 
     return {
       success: true,
-      message: '환불 처리가 시작되었습니다. 영업일 기준 3-5일 소요됩니다.'
+      message: '환불 처리가 접수되었습니다. 영업일 기준 3-5일 소요됩니다.',
     };
   } catch (error) {
     console.error('[processPaymentRefund] Error:', error);
     return {
       success: false,
-      message: '환불 처리 중 오류가 발생했습니다. 고객센터로 문의하세요.'
+      message: '환불 처리 중 오류가 발생했습니다. 고객센터로 문의하세요.',
     };
   }
 }
