@@ -15,12 +15,7 @@ import {
 } from 'lucide-react';
 import { Database } from '@/types/database';
 import {
-  getAccessibleGolfClubs,
-  getTeeTimes,
-  createTeeTime,
-  updateTeeTime,
-  blockTeeTime,
-  unblockTeeTime
+  getAccessibleGolfClubs
 } from './actions';
 
 type TeeTime = Database['public']['Tables']['tee_times']['Row'];
@@ -34,6 +29,7 @@ export default function AdminTeeTimesPage() {
   const [teeTimes, setTeeTimes] = useState<TeeTime[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Modal states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -47,10 +43,20 @@ export default function AdminTeeTimesPage() {
     status: 'OPEN' as 'OPEN' | 'BLOCKED'
   });
 
+  const getErrorMessage = (payload: unknown, fallback: string) => {
+    if (!payload || typeof payload !== 'object') return fallback;
+    const root = payload as Record<string, unknown>;
+    const errorObj = root.error as Record<string, unknown> | undefined;
+    if (errorObj && typeof errorObj.message === 'string') return errorObj.message;
+    if (typeof root.error === 'string') return root.error;
+    return fallback;
+  };
+
   // Fetch accessible clubs on mount
   useEffect(() => {
     async function fetchClubs() {
       setLoading(true);
+      setError(null);
       const result = await getAccessibleGolfClubs();
 
       if (result.success && result.clubs) {
@@ -59,7 +65,7 @@ export default function AdminTeeTimesPage() {
           setSelectedClubId(result.clubs[0].id);
         }
       } else {
-        alert(result.error || 'Failed to load golf clubs');
+        setError(result.error || 'Failed to load golf clubs');
       }
       setLoading(false);
     }
@@ -78,12 +84,19 @@ export default function AdminTeeTimesPage() {
     if (!selectedClubId) return;
 
     setFetching(true);
-    const result = await getTeeTimes(selectedClubId, selectedDateYmd);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/tee-times?clubId=${selectedClubId}&date=${selectedDateYmd}`);
+      const payload = await res.json().catch(() => null);
 
-    if (result.success && result.teeTimes) {
-      setTeeTimes(result.teeTimes);
-    } else {
-      alert(result.error || 'Failed to load tee times');
+      if (res.ok && payload?.success && Array.isArray(payload.data)) {
+        setTeeTimes(payload.data as TeeTime[]);
+      } else {
+        setError(getErrorMessage(payload, 'Failed to load tee times'));
+        setTeeTimes([]);
+      }
+    } catch {
+      setError('Failed to load tee times');
       setTeeTimes([]);
     }
     setFetching(false);
@@ -94,28 +107,37 @@ export default function AdminTeeTimesPage() {
 
     // Combine date and time
     const teeOffISO = new Date(`${selectedDateYmd}T${formData.tee_off_time}:00+09:00`).toISOString();
+    setError(null);
 
-    const result = await createTeeTime({
-      golf_club_id: selectedClubId,
-      tee_off: teeOffISO,
-      base_price: formData.base_price,
-      status: formData.status
-    });
+    try {
+      const res = await fetch('/api/admin/tee-times', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          golf_club_id: selectedClubId,
+          tee_off: teeOffISO,
+          base_price: formData.base_price,
+          status: formData.status,
+        }),
+      });
+      const payload = await res.json().catch(() => null);
 
-    if (result.success) {
-      alert('티타임이 생성되었습니다.');
-      setIsCreateModalOpen(false);
-      resetForm();
-      fetchTeeTimes();
-    } else {
-      alert(result.error || 'Failed to create tee time');
+      if (res.ok && payload?.success) {
+        setIsCreateModalOpen(false);
+        resetForm();
+        await fetchTeeTimes();
+      } else {
+        setError(getErrorMessage(payload, 'Failed to create tee time'));
+      }
+    } catch {
+      setError('Failed to create tee time');
     }
   };
 
   const handleUpdateTeeTime = async () => {
     if (!editingTeeTime) return;
 
-    const payload: any = {
+    const payload: Record<string, unknown> = {
       base_price: formData.base_price,
       status: formData.status
     };
@@ -124,43 +146,70 @@ export default function AdminTeeTimesPage() {
     if (formData.tee_off_time) {
       payload.tee_off = new Date(`${selectedDateYmd}T${formData.tee_off_time}:00+09:00`).toISOString();
     }
+    setError(null);
 
-    const result = await updateTeeTime(editingTeeTime.id, payload);
+    try {
+      const res = await fetch(`/api/admin/tee-times/${editingTeeTime.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const responsePayload = await res.json().catch(() => null);
 
-    if (result.success) {
-      alert('티타임이 수정되었습니다.');
-      setIsEditModalOpen(false);
-      setEditingTeeTime(null);
-      resetForm();
-      fetchTeeTimes();
-    } else {
-      alert(result.error || 'Failed to update tee time');
+      if (res.ok && responsePayload?.success) {
+        setIsEditModalOpen(false);
+        setEditingTeeTime(null);
+        resetForm();
+        await fetchTeeTimes();
+      } else {
+        setError(getErrorMessage(responsePayload, 'Failed to update tee time'));
+      }
+    } catch {
+      setError('Failed to update tee time');
     }
   };
 
   const handleBlockTeeTime = async (id: number) => {
     if (!confirm('이 티타임을 차단하시겠습니까?')) return;
+    setError(null);
 
-    const result = await blockTeeTime(id);
+    try {
+      const res = await fetch(`/api/admin/tee-times/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'BLOCKED' }),
+      });
+      const payload = await res.json().catch(() => null);
 
-    if (result.success) {
-      alert('티타임이 차단되었습니다.');
-      fetchTeeTimes();
-    } else {
-      alert(result.error || 'Failed to block tee time');
+      if (res.ok && payload?.success) {
+        await fetchTeeTimes();
+      } else {
+        setError(getErrorMessage(payload, 'Failed to block tee time'));
+      }
+    } catch {
+      setError('Failed to block tee time');
     }
   };
 
   const handleUnblockTeeTime = async (id: number) => {
     if (!confirm('이 티타임을 다시 활성화하시겠습니까?')) return;
+    setError(null);
 
-    const result = await unblockTeeTime(id);
+    try {
+      const res = await fetch(`/api/admin/tee-times/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'OPEN' }),
+      });
+      const payload = await res.json().catch(() => null);
 
-    if (result.success) {
-      alert('티타임이 활성화되었습니다.');
-      fetchTeeTimes();
-    } else {
-      alert(result.error || 'Failed to unblock tee time');
+      if (res.ok && payload?.success) {
+        await fetchTeeTimes();
+      } else {
+        setError(getErrorMessage(payload, 'Failed to unblock tee time'));
+      }
+    } catch {
+      setError('Failed to unblock tee time');
     }
   };
 
@@ -231,6 +280,18 @@ export default function AdminTeeTimesPage() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
+          <span className="text-sm text-red-700">{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-500 hover:text-red-700 text-sm font-medium ml-4"
+          >
+            닫기
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>

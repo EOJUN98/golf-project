@@ -191,6 +191,8 @@ export async function createTeeTime(payload: {
       golf_club_id: payload.golf_club_id,
       tee_off: payload.tee_off,
       base_price: payload.base_price,
+      current_price: payload.base_price,
+      currency: 'KRW',
       status: payload.status || 'OPEN',
       updated_by: role.userId,
     };
@@ -262,6 +264,7 @@ export async function updateTeeTime(
     // Prepare update data
     const updateData: TeeTimeUpdate = {
       ...payload,
+      ...(payload.base_price !== undefined ? { current_price: payload.base_price } : {}),
       updated_by: role.userId,
     };
 

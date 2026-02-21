@@ -188,9 +188,12 @@ export interface Database {
           golf_club_id: number
           tee_off: string
           base_price: number
+          current_price: number
+          currency: string
           status: 'OPEN' | 'BOOKED' | 'BLOCKED'
           weather_condition: Json | null
           reserved_by: string | null // UUID
+          created_at: string
           reserved_at: string | null
           updated_by: string | null // UUID
           updated_at: string | null
@@ -200,9 +203,12 @@ export interface Database {
           golf_club_id?: number
           tee_off: string
           base_price: number
+          current_price: number
+          currency?: string
           status?: 'OPEN' | 'BOOKED' | 'BLOCKED'
           weather_condition?: Json | null
           reserved_by?: string | null // UUID
+          created_at?: string
           reserved_at?: string | null
           updated_by?: string | null
           updated_at?: string | null
@@ -212,9 +218,12 @@ export interface Database {
           golf_club_id?: number
           tee_off?: string
           base_price?: number
+          current_price?: number
+          currency?: string
           status?: 'OPEN' | 'BOOKED' | 'BLOCKED'
           weather_condition?: Json | null
           reserved_by?: string | null // UUID
+          created_at?: string
           reserved_at?: string | null
           updated_by?: string | null
           updated_at?: string | null
@@ -332,6 +341,174 @@ export interface Database {
           location_name?: string
           location_lat?: number | null
           location_lng?: number | null
+        }
+        Relationships: []
+      }
+      external_price_targets: {
+        Row: {
+          id: number
+          site_code: string
+          course_name: string
+          url: string
+          final_price_selector: string
+          original_price_selector: string | null
+          play_date_selector: string | null
+          tee_time_selector: string | null
+          wait_for_selector: string | null
+          active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+          adapter_code: string
+          source_platform: 'WEB' | 'APP'
+          parser_config: Json
+        }
+        Insert: {
+          id?: number
+          site_code: string
+          course_name: string
+          url: string
+          final_price_selector: string
+          original_price_selector?: string | null
+          play_date_selector?: string | null
+          tee_time_selector?: string | null
+          wait_for_selector?: string | null
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+          adapter_code?: string
+          source_platform?: 'WEB' | 'APP'
+          parser_config?: Json
+        }
+        Update: {
+          id?: number
+          site_code?: string
+          course_name?: string
+          url?: string
+          final_price_selector?: string
+          original_price_selector?: string | null
+          play_date_selector?: string | null
+          tee_time_selector?: string | null
+          wait_for_selector?: string | null
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+          adapter_code?: string
+          source_platform?: 'WEB' | 'APP'
+          parser_config?: Json
+        }
+        Relationships: []
+      }
+      external_price_snapshots: {
+        Row: {
+          id: number
+          target_id: number | null
+          site_code: string
+          course_name: string
+          source_url: string
+          play_date: string | null
+          tee_time: string | null
+          currency: string
+          original_price: number | null
+          final_price: number | null
+          discount_amount: number | null
+          discount_rate: number | null
+          crawled_at: string
+          crawl_status: 'SUCCESS' | 'FAILED'
+          error_message: string | null
+          payload: Json
+          created_at: string
+          collection_window: 'WEEK_BEFORE' | 'TWO_DAYS_BEFORE' | 'SAME_DAY_MORNING' | 'IMMINENT_3H' | null
+          day_part: 'PART_1' | 'PART_2' | 'PART_3' | null
+          slot_position: 'EARLY' | 'MIDDLE' | 'LATE' | null
+          availability_status: 'AVAILABLE' | 'NO_DATA' | 'AUTH_REQUIRED' | 'REMOVED' | 'FAILED'
+          source_platform: 'WEB' | 'APP'
+        }
+        Insert: {
+          id?: number
+          target_id?: number | null
+          site_code: string
+          course_name: string
+          source_url: string
+          play_date?: string | null
+          tee_time?: string | null
+          currency?: string
+          original_price?: number | null
+          final_price?: number | null
+          discount_amount?: number | null
+          discount_rate?: number | null
+          crawled_at?: string
+          crawl_status?: 'SUCCESS' | 'FAILED'
+          error_message?: string | null
+          payload?: Json
+          created_at?: string
+          collection_window?: 'WEEK_BEFORE' | 'TWO_DAYS_BEFORE' | 'SAME_DAY_MORNING' | 'IMMINENT_3H' | null
+          day_part?: 'PART_1' | 'PART_2' | 'PART_3' | null
+          slot_position?: 'EARLY' | 'MIDDLE' | 'LATE' | null
+          availability_status?: 'AVAILABLE' | 'NO_DATA' | 'AUTH_REQUIRED' | 'REMOVED' | 'FAILED'
+          source_platform?: 'WEB' | 'APP'
+        }
+        Update: {
+          id?: number
+          target_id?: number | null
+          site_code?: string
+          course_name?: string
+          source_url?: string
+          play_date?: string | null
+          tee_time?: string | null
+          currency?: string
+          original_price?: number | null
+          final_price?: number | null
+          discount_amount?: number | null
+          discount_rate?: number | null
+          crawled_at?: string
+          crawl_status?: 'SUCCESS' | 'FAILED'
+          error_message?: string | null
+          payload?: Json
+          created_at?: string
+          collection_window?: 'WEEK_BEFORE' | 'TWO_DAYS_BEFORE' | 'SAME_DAY_MORNING' | 'IMMINENT_3H' | null
+          day_part?: 'PART_1' | 'PART_2' | 'PART_3' | null
+          slot_position?: 'EARLY' | 'MIDDLE' | 'LATE' | null
+          availability_status?: 'AVAILABLE' | 'NO_DATA' | 'AUTH_REQUIRED' | 'REMOVED' | 'FAILED'
+          source_platform?: 'WEB' | 'APP'
+        }
+        Relationships: []
+      }
+      external_course_regions: {
+        Row: {
+          id: number
+          course_name: string
+          course_name_normalized: string
+          region: '충청' | '수도권' | '강원' | '경상' | '전라' | '제주'
+          note: string | null
+          active: boolean
+          created_by: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          course_name: string
+          course_name_normalized: string
+          region: '충청' | '수도권' | '강원' | '경상' | '전라' | '제주'
+          note?: string | null
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          course_name?: string
+          course_name_normalized?: string
+          region?: '충청' | '수도권' | '강원' | '경상' | '전라' | '제주'
+          note?: string | null
+          active?: boolean
+          created_by?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -611,7 +788,107 @@ export interface Database {
         Relationships: []
       }
     }
-    Views: {}
+    Views: {
+      settlement_summary: {
+        Row: {
+          id: string
+          golf_club_id: number
+          period_start: string
+          period_end: string
+          gross_amount: number
+          refund_amount: number
+          net_amount: number
+          platform_fee: number
+          club_payout: number
+          reservation_count: number
+          status: 'DRAFT' | 'CONFIRMED' | 'LOCKED'
+          policy_version: string | null
+          commission_rate: number
+          include_no_show: boolean
+          include_cancelled: boolean
+          include_refunded: boolean
+          created_at: string
+          created_by_user_id: string | null
+          confirmed_at: string | null
+          confirmed_by_user_id: string | null
+          locked_at: string | null
+          locked_by_user_id: string | null
+          notes: string | null
+          metadata: Json
+          updated_at: string
+          golf_club_name: string | null
+          golf_club_location: string | null
+          created_by_email: string | null
+          confirmed_by_email: string | null
+          locked_by_email: string | null
+        }
+        Insert: {
+          id?: string
+          golf_club_id?: number
+          period_start?: string
+          period_end?: string
+          gross_amount?: number
+          refund_amount?: number
+          net_amount?: number
+          platform_fee?: number
+          club_payout?: number
+          reservation_count?: number
+          status?: 'DRAFT' | 'CONFIRMED' | 'LOCKED'
+          policy_version?: string | null
+          commission_rate?: number
+          include_no_show?: boolean
+          include_cancelled?: boolean
+          include_refunded?: boolean
+          created_at?: string
+          created_by_user_id?: string | null
+          confirmed_at?: string | null
+          confirmed_by_user_id?: string | null
+          locked_at?: string | null
+          locked_by_user_id?: string | null
+          notes?: string | null
+          metadata?: Json
+          updated_at?: string
+          golf_club_name?: string | null
+          golf_club_location?: string | null
+          created_by_email?: string | null
+          confirmed_by_email?: string | null
+          locked_by_email?: string | null
+        }
+        Update: {
+          id?: string
+          golf_club_id?: number
+          period_start?: string
+          period_end?: string
+          gross_amount?: number
+          refund_amount?: number
+          net_amount?: number
+          platform_fee?: number
+          club_payout?: number
+          reservation_count?: number
+          status?: 'DRAFT' | 'CONFIRMED' | 'LOCKED'
+          policy_version?: string | null
+          commission_rate?: number
+          include_no_show?: boolean
+          include_cancelled?: boolean
+          include_refunded?: boolean
+          created_at?: string
+          created_by_user_id?: string | null
+          confirmed_at?: string | null
+          confirmed_by_user_id?: string | null
+          locked_at?: string | null
+          locked_by_user_id?: string | null
+          notes?: string | null
+          metadata?: Json
+          updated_at?: string
+          golf_club_name?: string | null
+          golf_club_location?: string | null
+          created_by_email?: string | null
+          confirmed_by_email?: string | null
+          locked_by_email?: string | null
+        }
+        Relationships: []
+      }
+    }
     Functions: {
       calculate_segment_score: {
         Args: {
