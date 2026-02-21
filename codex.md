@@ -1857,3 +1857,34 @@
 - 기대 효과:
   - 앱 소스의 오분류(`NO_DATA`)를 `AUTH_REQUIRED`로 정규화
   - 임박 창의 false-positive 행 감소(실제 3시간 내 티타임 중심)
+
+### 2026-02-21 87차 기록 (Crawler 정밀도 튜닝 2차: window 정합/중복 노이즈 정리)
+- 작업:
+  - `crawler/src/crawl-final-prices.mjs` 정밀도 2차 보강
+  - 보강 1) 사이트 공통 window 정합 검증 함수 추가
+    - `matchesWindowByPlayDate(window, playDate, teeTime, now)` 추가
+    - `WEEK_BEFORE/TWO_DAYS_BEFORE/SAME_DAY_MORNING/IMMINENT_3H`를 실제 `play_date` 기준으로 강제 매칭
+  - 보강 2) 날짜 파서 확장
+    - `parseMonthDayToDate`가 `MM/DD`뿐 아니라 `MM월DD일` 포맷도 처리하도록 확장
+  - 보강 3) 사이트별 적용
+    - `golfpang`: `bookingDateText`에서 실제 날짜 파싱 후 window 정합 검증
+    - `golfrock`: AJAX 행/양도 테이블 모두 실제 날짜 기준 window 정합 검증
+    - `teeupnjoy`: `bookingTime` 파싱을 `padStart(4, '0')` 기반으로 보강하고 window 정합 검증 적용
+  - 보강 4) 샘플링 노이즈 완화
+    - `dedupeAvailableRows` 추가
+    - 동일 `(window, play_date, tee_time, course_name, final_price)` 중복 행 제거 후 day-part 샘플링
+- 변경 파일:
+  - `crawler/src/crawl-final-prices.mjs`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 검증:
+  - `npm --prefix crawler run check` 통과
+  - dry-run 실검증:
+    - `node crawler/src/crawl-final-prices.mjs --target=4 --dry-run --window=IMMINENT_3H` -> `AUTH_REQUIRED` 1행
+    - `node crawler/src/crawl-final-prices.mjs --target=5 --dry-run --window=IMMINENT_3H` -> `AUTH_REQUIRED` 1행
+    - `node crawler/src/crawl-final-prices.mjs --target=2 --dry-run --window=WEEK_BEFORE` -> 9행(이전 대비 양도 섹션 오분류 행 제거)
+    - `node crawler/src/crawl-final-prices.mjs --target=3 --dry-run --window=WEEK_BEFORE` -> 8행(중복 슬롯 1건 감소)
+- 기대 효과:
+  - 사이트별 window 오분류(특히 golfrock 양도 섹션) 감소
+  - 동일 시간/가격 중복 슬롯으로 인한 노이즈 완화
+  - 날짜/시간 포맷 편차에 대한 파서 내성 향상

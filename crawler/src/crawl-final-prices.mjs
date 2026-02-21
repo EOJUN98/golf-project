@@ -174,6 +174,18 @@ function isImminentWithin3Hours(playDate, teeTime, now = new Date()) {
   return hoursUntil >= 0 && hoursUntil <= 3;
 }
 
+function matchesWindowByPlayDate(window, playDate, teeTime, now = new Date()) {
+  if (!playDate) return false;
+  const { date: todayKst } = getKstNow(now);
+  const dayDiff = diffDays(playDate, todayKst);
+
+  if (window === 'WEEK_BEFORE') return dayDiff === 7;
+  if (window === 'TWO_DAYS_BEFORE') return dayDiff === 2;
+  if (window === 'SAME_DAY_MORNING') return dayDiff === 0;
+  if (window === 'IMMINENT_3H') return dayDiff === 0 && isImminentWithin3Hours(playDate, teeTime, now);
+  return false;
+}
+
 function classifyDayPart(teeTime) {
   if (!teeTime) return null;
   const [hourRaw] = teeTime.split(':');
@@ -271,6 +283,29 @@ function sampleRowsByDayParts(rows) {
   return out;
 }
 
+function dedupeAvailableRows(rows) {
+  const out = [];
+  const seen = new Set();
+
+  for (const row of rows) {
+    const key = [
+      row.collection_window || '',
+      row.play_date || '',
+      row.tee_time || '',
+      row.course_name || '',
+      row.final_price ?? '',
+    ].join('|');
+
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(row);
+  }
+
+  return out;
+}
+
 function buildBaseSnapshot(target, row = {}) {
   return {
     target_id: target.id,
@@ -322,7 +357,11 @@ function appendQueryParam(inputUrl, key, value) {
 }
 
 function parseMonthDayToDate(monthDayText, now = new Date()) {
-  const match = String(monthDayText || '').match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+  const text = String(monthDayText || '');
+  let match = text.match(/(\d{1,2})\s*\/\s*(\d{1,2})/);
+  if (!match) {
+    match = text.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일?/);
+  }
   if (!match) return null;
 
   const { date: todayKst } = getKstNow(now);
@@ -458,8 +497,9 @@ async function crawlGolfPangList(browser, target, args) {
           continue;
         }
 
+        const playDate = parseMonthDayToDate(row.bookingDateText, now) || horizon.date;
         const teeTime = parseTeeTime(row.teeTimeText);
-        if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(horizon.date, teeTime, now)) {
+        if (!matchesWindowByPlayDate(horizon.window, playDate, teeTime, now)) {
           continue;
         }
 
@@ -467,7 +507,7 @@ async function crawlGolfPangList(browser, target, args) {
           buildBaseSnapshot(target, {
             course_name: row.courseNameText || target.course_name,
             source_url: page.url(),
-            play_date: horizon.date,
+            play_date: playDate,
             tee_time: teeTime,
             final_price: parsePrice(row.finalPriceText),
             crawl_status: 'SUCCESS',
@@ -712,7 +752,7 @@ async function crawlGolfRockList(browser, target, args) {
             const playDate = parseMonthDayToDate(priceRow.dateText, now) || horizon.date;
             const priceType = /선입/.test(priceRow.priceText) ? 'prepaid' : 'onsite';
             const teeTime = parseTeeTime(priceRow.teeTime);
-            if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(playDate, teeTime, now)) {
+            if (!matchesWindowByPlayDate(horizon.window, playDate, teeTime, now)) {
               continue;
             }
 
@@ -758,7 +798,7 @@ async function crawlGolfRockList(browser, target, args) {
         const dateMatch = dateTime.match(/(\d{1,2})\/(\d{1,2})\([^)]*\)\s*([0-2]?\d:[0-5]\d)/);
         const playDate = dateMatch ? parseMonthDayToDate(`${dateMatch[1]}/${dateMatch[2]}`, now) : horizon.date;
         const teeTime = dateMatch ? parseTeeTime(dateMatch[3]) : null;
-        if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(playDate, teeTime, now)) {
+        if (!matchesWindowByPlayDate(horizon.window, playDate, teeTime, now)) {
           continue;
         }
 
@@ -966,11 +1006,17 @@ async function crawlTeeupNjoyApi(_browser, target, args) {
             continue;
           }
 
-          const teeTime = item.bookingTime
-            ? `${String(item.bookingTime).slice(0, 2)}:${String(item.bookingTime).slice(2, 4)}`
-            : null;
+          const teeTime = (() => {
+            const raw = String(item.bookingTime ?? '').trim();
+            if (!raw) return null;
+            if (raw.includes(':')) return parseTeeTime(raw);
+            const digits = raw.replace(/[^0-9]/g, '');
+            if (!digits) return null;
+            const padded = digits.padStart(4, '0').slice(-4);
+            return parseTeeTime(`${padded.slice(0, 2)}:${padded.slice(2, 4)}`);
+          })();
           const playDate = parseYyyymmdd(item.bookingDay) || horizon.date;
-          if (horizon.window === 'IMMINENT_3H' && !isImminentWithin3Hours(playDate, teeTime, now)) {
+          if (!matchesWindowByPlayDate(horizon.window, playDate, teeTime, now)) {
             continue;
           }
           const finalPrice = (() => {
@@ -994,7 +1040,7 @@ async function crawlTeeupNjoyApi(_browser, target, args) {
               course_name: courseName,
               source_url: listUrl,
               play_date: playDate,
-              tee_time: parseTeeTime(teeTime),
+              tee_time: teeTime,
               final_price: finalPrice,
               crawl_status: 'SUCCESS',
               availability_status: finalPrice ? 'AVAILABLE' : 'NO_DATA',
@@ -1079,9 +1125,10 @@ function postProcessRows(target, rows, args) {
 
   const directRows = normalized.filter((row) => row.availability_status !== 'AVAILABLE' || !row.tee_time);
   const availableRows = normalized.filter((row) => row.availability_status === 'AVAILABLE' && row.tee_time);
+  const dedupedAvailableRows = dedupeAvailableRows(availableRows);
 
   const grouped = new Map();
-  for (const row of availableRows) {
+  for (const row of dedupedAvailableRows) {
     const key = `${row.collection_window}|${row.play_date || 'unknown'}`;
     const bucket = grouped.get(key) || [];
     bucket.push(row);
