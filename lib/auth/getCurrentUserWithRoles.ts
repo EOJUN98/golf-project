@@ -31,6 +31,27 @@ export interface UserWithRoles {
   } | null;
 }
 
+function buildDemoFallbackUser(email?: string): UserWithRoles {
+  const normalizedEmail = (email || 'demo@tugol.dev').trim().toLowerCase() || 'demo@tugol.dev';
+  return {
+    id: `demo-${normalizedEmail}`,
+    email: normalizedEmail,
+    name: 'Demo Admin',
+    isSuperAdmin: true,
+    isAdmin: true,
+    isClubAdmin: true,
+    isSuspended: false,
+    clubIds: [1],
+    rawUser: {
+      email: normalizedEmail,
+      is_admin: true,
+      is_super_admin: true,
+      is_suspended: false,
+      name: 'Demo Admin',
+    },
+  };
+}
+
 type RoleUserRow = Pick<
   Database['public']['Tables']['users']['Row'],
   'id' | 'email' | 'name' | 'is_admin' | 'is_super_admin'
@@ -73,6 +94,7 @@ function resolveBootstrapRoleByEmail(email: string | undefined) {
   const bootstrapSuperAdmins = new Set([
     'superadmin@tugol.dev',
     'backup.superadmin.20260212181546@tugol.dev',
+    'gogyeo12345@gmail.com',
     ...parseEmailList(process.env.SUPER_ADMIN_BOOTSTRAP_EMAILS),
   ]);
   const bootstrapAdmins = parseEmailList(process.env.ADMIN_BOOTSTRAP_EMAILS);
@@ -81,6 +103,35 @@ function resolveBootstrapRoleByEmail(email: string | undefined) {
   const isAdmin = isSuperAdmin || bootstrapAdmins.has(normalizedEmail);
 
   return { isSuperAdmin, isAdmin };
+}
+
+async function findDemoUserRowByEmail(email: string, roleLookupClient: ReturnType<typeof createRoleLookupClient>) {
+  if (!roleLookupClient || !email) return null;
+
+  const { data, error } = await roleLookupClient
+    .from('users')
+    .select('id, email, name, is_admin, is_super_admin')
+    .eq('email', email)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  return data;
+}
+
+async function resolveDemoUserRow(
+  preferredEmail: string | undefined,
+  roleLookupClient: ReturnType<typeof createRoleLookupClient>
+) {
+  const candidates = [
+    preferredEmail,
+  ].filter((email): email is string => Boolean(email && email.trim()));
+
+  for (const email of candidates) {
+    const found = await findDemoUserRowByEmail(email, roleLookupClient);
+    if (found) return found;
+  }
+
+  return null;
 }
 
 /**
@@ -109,23 +160,19 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
     const isDemoMode = isNonProductionDemoMode();
     const demoUserEmail = process.env.NEXT_PUBLIC_DEMO_USER_EMAIL;
 
-    if (isDemoMode && demoUserEmail) {
-      console.log('[DEMO MODE] Force-logging in user:', demoUserEmail);
+    if (isDemoMode) {
+      const roleLookupClient = createRoleLookupClient();
+      const userData = await resolveDemoUserRow(demoUserEmail, roleLookupClient);
+      const fallbackUser = buildDemoFallbackUser(demoUserEmail);
 
-      // Fetch user directly from public.users table by email
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id, email, name, is_admin, is_super_admin, segment_type')
-        .eq('email', demoUserEmail)
-        .single();
-
-      if (userError || !userData) {
-        console.error('[DEMO MODE] User not found:', demoUserEmail, userError);
-        return null;
+      if (!userData) {
+        console.error('[DEMO MODE] User lookup failed, using fallback demo admin user:', demoUserEmail || '(unset)');
+        return fallbackUser;
       }
 
       // Fetch club admin associations
-      const { data: clubAdmins, error: clubAdminError } = await supabase
+      const lookupClient = roleLookupClient ?? supabase;
+      const { data: clubAdmins, error: clubAdminError } = await lookupClient
         .from('club_admins')
         .select('golf_club_id')
         .eq('user_id', userData.id);
@@ -144,7 +191,6 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
         is_admin: boolean;
         is_super_admin: boolean;
         is_suspended?: boolean;
-        segment_type?: string;
       };
 
       // Build role flags
@@ -157,8 +203,7 @@ export async function getCurrentUserWithRoles(): Promise<UserWithRoles | null> {
         email: user.email,
         isSuperAdmin,
         isAdmin,
-        isClubAdmin,
-        segment: user.segment_type
+        isClubAdmin
       });
 
       return {
