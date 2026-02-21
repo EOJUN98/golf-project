@@ -27,6 +27,22 @@ interface SnapshotRow {
   error_message: string | null;
 }
 
+interface SnapshotDetailRow {
+  id: number;
+  target_id: number | null;
+  site_code: string;
+  course_name: string;
+  play_date: string | null;
+  final_price: number | null;
+  original_price: number | null;
+  crawled_at: string;
+  crawl_status: string | null;
+  availability_status: string | null;
+  collection_window: string | null;
+  source_platform: string | null;
+  error_message: string | null;
+}
+
 interface RegionMappingRow {
   course_name: string;
   course_name_normalized: string;
@@ -64,6 +80,8 @@ interface CourseSummary {
 const REGION_ORDER: RegionKey[] = ['충청', '수도권', '강원', '경상', '전라', '제주'];
 const WINDOW_KEYS: WindowKey[] = ['WEEK_BEFORE', 'TWO_DAYS_BEFORE', 'SAME_DAY_MORNING', 'IMMINENT_3H'];
 const LOOKBACK_DAYS = 30;
+const FILTER_LOOKBACK_DAYS = 7;
+const ALLOWED_AVAILABILITY = new Set(['AVAILABLE', 'NO_DATA', 'FAILED', 'AUTH_REQUIRED']);
 
 function getCrawlerSupabaseAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -128,6 +146,29 @@ function toNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function toYmdKst(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function addDaysYmd(dateYmd: string, days: number) {
+  const [year, month, day] = dateYmd.split('-').map(Number);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  utc.setUTCDate(utc.getUTCDate() + days);
+  const y = utc.getUTCFullYear();
+  const m = String(utc.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(utc.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function isYmd(value: string | undefined | null): value is string {
+  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value));
 }
 
 function aggregateCourseSummaries(
@@ -266,7 +307,17 @@ function aggregateCourseSummaries(
   };
 }
 
-export default async function AdminCrawlerPage() {
+export default async function AdminCrawlerPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    from?: string;
+    to?: string;
+    region?: string;
+    course?: string;
+    status?: string;
+  }>;
+}) {
   try {
     await requireAdminAccess();
   } catch (error) {
@@ -276,11 +327,27 @@ export default async function AdminCrawlerPage() {
     redirect('/forbidden');
   }
 
+  const params = await searchParams;
+  const todayYmd = toYmdKst();
+  const defaultFromYmd = addDaysYmd(todayYmd, -FILTER_LOOKBACK_DAYS);
+  const parsedFrom = isYmd(params.from) ? params.from : defaultFromYmd;
+  const parsedTo = isYmd(params.to) ? params.to : todayYmd;
+  const filterFrom = parsedFrom <= parsedTo ? parsedFrom : parsedTo;
+  const filterTo = parsedFrom <= parsedTo ? parsedTo : parsedFrom;
+  const filterRegion = REGION_ORDER.includes((params.region || '') as RegionKey)
+    ? (params.region as RegionKey)
+    : null;
+  const filterCourse = params.course?.trim() ? params.course.trim() : null;
+  const filterStatus = ALLOWED_AVAILABILITY.has(String(params.status || '').toUpperCase())
+    ? String(params.status).toUpperCase()
+    : null;
+
   const sinceIso = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   let loadError: string | null = null;
   let targets: TargetRow[] = [];
   let snapshots: SnapshotRow[] = [];
+  let snapshotDetails: SnapshotDetailRow[] = [];
   const manualRegionMap = new Map<string, RegionKey>();
 
   try {
@@ -322,6 +389,45 @@ export default async function AdminCrawlerPage() {
       final_price: toNumber(row.final_price),
     }));
 
+    let snapshotDetailQuery = (supabase as any)
+      .from('external_price_snapshots')
+      .select(
+        'id, target_id, site_code, course_name, play_date, final_price, original_price, crawled_at, crawl_status, availability_status, collection_window, source_platform, error_message'
+      )
+      .gte('play_date', filterFrom)
+      .lte('play_date', filterTo)
+      .order('play_date', { ascending: false })
+      .order('crawled_at', { ascending: false })
+      .limit(500);
+
+    if (filterCourse) {
+      snapshotDetailQuery = snapshotDetailQuery.eq('course_name', filterCourse);
+    }
+    if (filterStatus) {
+      snapshotDetailQuery = snapshotDetailQuery.eq('availability_status', filterStatus);
+    }
+
+    const { data: detailData, error: detailError } = await snapshotDetailQuery;
+    if (detailError) {
+      throw new Error(detailError.message);
+    }
+
+    snapshotDetails = (detailData || []).map((row: any) => ({
+      id: Number(row.id),
+      target_id: row.target_id ?? null,
+      site_code: String(row.site_code || ''),
+      course_name: String(row.course_name || ''),
+      play_date: row.play_date ? String(row.play_date) : null,
+      final_price: toNumber(row.final_price),
+      original_price: toNumber(row.original_price),
+      crawled_at: String(row.crawled_at),
+      crawl_status: row.crawl_status ? String(row.crawl_status) : null,
+      availability_status: row.availability_status ? String(row.availability_status) : null,
+      collection_window: row.collection_window ? String(row.collection_window) : null,
+      source_platform: row.source_platform ? String(row.source_platform) : null,
+      error_message: row.error_message ? String(row.error_message) : null,
+    }));
+
     const mappings = (mappingData || []) as RegionMappingRow[];
     for (const mapping of mappings) {
       const normalized = mapping.course_name_normalized || normalizeCourseName(mapping.course_name);
@@ -342,6 +448,14 @@ export default async function AdminCrawlerPage() {
       totalCourses={aggregated.totalCourses}
       totalSnapshots={aggregated.totalSnapshots}
       loadError={loadError}
+      snapshotDetails={snapshotDetails}
+      filters={{
+        from: filterFrom,
+        to: filterTo,
+        region: filterRegion,
+        course: filterCourse,
+        status: filterStatus,
+      }}
     />
   );
 }
