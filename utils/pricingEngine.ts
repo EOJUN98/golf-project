@@ -19,6 +19,8 @@ export interface PricingContext {
   teeTime: TeeTime;
   user?: User;
   weather?: Weather;
+  marketPrice?: number | null;
+  marketTraits?: string[];
   userDistanceKm?: number; // LBS (Optional)
   now?: Date; // For testing time travel
 }
@@ -67,7 +69,7 @@ class SeededRandom {
 }
 
 export function calculatePricing(ctx: PricingContext): PricingResult {
-  const { teeTime, user, weather, userDistanceKm } = ctx;
+  const { teeTime, user, weather, marketPrice, marketTraits, userDistanceKm } = ctx;
   const now = ctx.now || new Date();
   const teeOff = new Date(teeTime.tee_off);
   const basePrice = teeTime.base_price;
@@ -125,6 +127,97 @@ export function calculatePricing(ctx: PricingContext): PricingResult {
       amount: -totalStepDiscount,
       rate: Number((totalStepDiscount / basePrice).toFixed(3))
     });
+  }
+
+  // Market convergence discount (external final selling price)
+  // Apply only when market price is lower than current price.
+  if (Number.isFinite(marketPrice) && (marketPrice as number) > 0) {
+    const referencePrice = Number(marketPrice);
+    const gap = currentPrice - referencePrice;
+    if (gap > 0) {
+      const convergenceAmount = Math.floor(gap * 0.5); // converge 50% toward market
+      const capAmount = Math.floor(basePrice * 0.2); // safety cap: max 20% of base
+      const discountAmount = Math.min(convergenceAmount, capAmount);
+
+      if (discountAmount > 0) {
+        currentPrice -= discountAmount;
+        factors.push({
+          code: 'MARKET_PRICE',
+          description: `Market Align (${referencePrice.toLocaleString('ko-KR')}원 기준)`,
+          amount: -discountAmount,
+          rate: Number((discountAmount / basePrice).toFixed(3))
+        });
+      }
+    }
+  }
+
+  const normalizedTraits = Array.isArray(marketTraits)
+    ? marketTraits
+        .map((trait) => (typeof trait === 'string' ? trait.trim().toLowerCase() : ''))
+        .filter(Boolean)
+    : [];
+
+  const hasTrait = (aliases: string[]) => aliases.some((alias) => normalizedTraits.includes(alias));
+  const hasPeakSeason = hasTrait(['성수기', 'peak', 'peak_season']);
+  const hasOffSeason = hasTrait(['비수기', 'off', 'off_season']);
+  const hasEvent = hasTrait(['이벤트', 'event', '프로모션', 'promotion']);
+  const hasLowDemand = hasTrait(['저수요', '수요약', '수요낮음', '공실', 'low_demand']);
+
+  if (hasPeakSeason) {
+    const discountSoFar = Math.max(0, basePrice - currentPrice);
+    const restoreAmount = Math.min(
+      Math.floor(discountSoFar * 0.5),
+      Math.floor(basePrice * 0.15)
+    );
+    if (restoreAmount > 0) {
+      currentPrice += restoreAmount;
+      factors.push({
+        code: 'TRAIT_PEAK_SEASON',
+        description: 'Peak Season Guard',
+        amount: restoreAmount,
+        rate: Number((restoreAmount / basePrice).toFixed(3))
+      });
+    }
+  } else if (hasOffSeason) {
+    const rate = 0.05;
+    const discountAmount = Math.floor(currentPrice * rate);
+    if (discountAmount > 0) {
+      currentPrice -= discountAmount;
+      factors.push({
+        code: 'TRAIT_OFF_SEASON',
+        description: 'Off-season Demand Support (5%)',
+        amount: -discountAmount,
+        rate
+      });
+    }
+  }
+
+  if (hasEvent) {
+    const rate = 0.03;
+    const discountAmount = Math.floor(currentPrice * rate);
+    if (discountAmount > 0) {
+      currentPrice -= discountAmount;
+      factors.push({
+        code: 'TRAIT_EVENT',
+        description: 'Event Promotion (3%)',
+        amount: -discountAmount,
+        rate
+      });
+    }
+  }
+
+  if (hasLowDemand) {
+    const rate = 0.03;
+    const discountAmount = Math.floor(currentPrice * rate);
+    if (discountAmount > 0) {
+      currentPrice -= discountAmount;
+      factors.push({
+        code: 'TRAIT_LOW_DEMAND',
+        description: 'Low Demand Support (3%)',
+        amount: -discountAmount,
+        rate
+      });
+    }
   }
 
   // --- Step 2: Multiplicative Percentage Discounts ---

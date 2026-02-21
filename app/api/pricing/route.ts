@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { calculatePricing } from '@/utils/pricingEngine';
 import { Database } from '@/types/database';
@@ -14,6 +15,14 @@ type ExternalSnapshotRow = {
   final_price: number | null;
   crawled_at: string;
   availability_status: 'AVAILABLE' | 'NO_DATA' | 'AUTH_REQUIRED' | 'REMOVED' | 'FAILED';
+  payload: unknown;
+};
+
+type ManualNote = {
+  text: string | null;
+  traits: string[];
+  updatedAt: string | null;
+  updatedByEmail: string | null;
 };
 
 function isValidDateParam(value: string | null): value is string {
@@ -59,8 +68,50 @@ function normalizeCourseName(name: string): string {
   return name.replace(/\s+/g, '').toLowerCase();
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseTraits(rawTraits: unknown): string[] {
+  if (!Array.isArray(rawTraits)) return [];
+
+  const traits: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of rawTraits) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    traits.push(trimmed);
+  }
+
+  return traits;
+}
+
+function parseManualNote(payload: unknown): ManualNote | null {
+  if (!isRecord(payload)) return null;
+  const raw = payload.manual_note;
+  if (!isRecord(raw)) return null;
+
+  const textRaw = typeof raw.text === 'string' ? raw.text.trim() : '';
+  const traits = parseTraits(raw.traits);
+
+  if (!textRaw && traits.length === 0) return null;
+
+  return {
+    text: textRaw || null,
+    traits,
+    updatedAt: typeof raw.updated_at === 'string' ? raw.updated_at : null,
+    updatedByEmail: typeof raw.updated_by_email === 'string' ? raw.updated_by_email : null,
+  };
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createSupabaseServerClient();
+  const adminClient = createSupabaseAdminClientOptional();
+  const marketSnapshotClient = adminClient ?? supabase;
   const now = new Date();
   const searchParams = request.nextUrl.searchParams;
 
@@ -136,31 +187,6 @@ export async function GET(request: NextRequest) {
     weatherRows = weatherData;
   }
 
-  const results = (teeTimes || []).map((teeTime: TeeTime) => {
-    const weather = selectClosestWeather(teeTime.tee_off, weatherRows);
-    const pricing = calculatePricing({
-      teeTime,
-      user: user || undefined,
-      weather: weather || undefined,
-      userDistanceKm: Number.isFinite(userDistanceKm) ? userDistanceKm : undefined,
-      now,
-    });
-
-    return {
-      ...teeTime,
-      finalPrice: pricing.finalPrice,
-      originalPrice: pricing.basePrice,
-      discountRate: Math.round(pricing.discountRate * 100),
-      isBlocked: pricing.isBlocked,
-      blockReason: pricing.blockReason,
-      factors: pricing.factors,
-      stepStatus: pricing.stepStatus,
-      panicMode: pricing.panicMode,
-    };
-  });
-
-  // External market reference (crawler snapshots):
-  // Attach latest available external final price per course/date as a reference signal.
   const teeTimeRows = teeTimes || [];
   const clubIds = Array.from(new Set(teeTimeRows.map((row) => row.golf_club_id)));
 
@@ -186,9 +212,9 @@ export async function GET(request: NextRequest) {
     const firstDate = dateFilters[0];
     const lastDate = dateFilters[dateFilters.length - 1];
 
-    const externalQuery = (supabase as any)
+    const externalQuery = (marketSnapshotClient as any)
       .from('external_price_snapshots')
-      .select('course_name, play_date, final_price, crawled_at, availability_status')
+      .select('course_name, play_date, final_price, crawled_at, availability_status, payload')
       .gte('play_date', firstDate)
       .lte('play_date', lastDate)
       .order('crawled_at', { ascending: false })
@@ -204,11 +230,14 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const enrichedResults = results.map((row) => {
-    const courseName = clubNameById.get(row.golf_club_id);
-    const playDate = toSeoulDate(new Date(row.tee_off));
+  const results = teeTimeRows.map((teeTime: TeeTime) => {
+    const weather = selectClosestWeather(teeTime.tee_off, weatherRows);
+    const courseName = clubNameById.get(teeTime.golf_club_id);
+    const playDate = toSeoulDate(new Date(teeTime.tee_off));
     const key = courseName ? `${normalizeCourseName(courseName)}|${playDate}` : null;
     const marketSnapshot = key ? marketSnapshotByKey.get(key) : undefined;
+    const manualNote = parseManualNote(marketSnapshot?.payload);
+    const marketTraits = manualNote?.traits || [];
 
     const marketPrice =
       marketSnapshot &&
@@ -217,11 +246,29 @@ export async function GET(request: NextRequest) {
         ? Number(marketSnapshot.final_price)
         : null;
 
+    const pricing = calculatePricing({
+      teeTime,
+      user: user || undefined,
+      weather: weather || undefined,
+      marketPrice,
+      marketTraits,
+      userDistanceKm: Number.isFinite(userDistanceKm) ? userDistanceKm : undefined,
+      now,
+    });
+
     const marketDelta =
-      marketPrice !== null ? Math.round(Number(row.finalPrice) - marketPrice) : null;
+      marketPrice !== null ? Math.round(Number(pricing.finalPrice) - marketPrice) : null;
 
     return {
-      ...row,
+      ...teeTime,
+      finalPrice: pricing.finalPrice,
+      originalPrice: pricing.basePrice,
+      discountRate: Math.round(pricing.discountRate * 100),
+      isBlocked: pricing.isBlocked,
+      blockReason: pricing.blockReason,
+      factors: pricing.factors,
+      stepStatus: pricing.stepStatus,
+      panicMode: pricing.panicMode,
       marketReference: marketSnapshot
         ? {
             courseName: marketSnapshot.course_name,
@@ -230,6 +277,10 @@ export async function GET(request: NextRequest) {
             crawledAt: marketSnapshot.crawled_at,
             availabilityStatus: marketSnapshot.availability_status,
             deltaFromMarket: marketDelta,
+            manualNote: manualNote?.text || null,
+            manualTraits: marketTraits,
+            manualNoteUpdatedAt: manualNote?.updatedAt || null,
+            manualNoteUpdatedByEmail: manualNote?.updatedByEmail || null,
           }
         : null,
     };
@@ -239,7 +290,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     status: 'success',
-    data: enrichedResults,
+    data: results,
     user: {
       segment: user?.segment || null,
       isNearby: Number.isFinite(userDistanceKm) ? (userDistanceKm as number) <= 15 : null,
