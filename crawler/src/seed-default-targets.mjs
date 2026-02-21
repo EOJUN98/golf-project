@@ -33,8 +33,8 @@ const DEFAULT_TARGETS = [
     source_platform: 'WEB',
     parser_config: {
       join_type: 'join',
-      // TODO: Replace with actual registered-club mapping IDs.
-      club_ids: [3],
+      // Synced from discovery result (2026-02-19, found_count=14).
+      club_ids: [352, 277, 369, 18, 83, 109, 110, 118, 201, 239, 279, 281, 332, 459],
     },
   },
   {

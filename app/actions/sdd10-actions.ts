@@ -21,6 +21,55 @@ import type {
   SegmentType,
 } from '@/types/sdd10-database';
 
+const KST_TIMEZONE = 'Asia/Seoul';
+const KST_WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+};
+const KR_FIXED_HOLIDAY_MONTH_DAYS = new Set([
+  '01-01', // New Year's Day
+  '03-01', // Independence Movement Day
+  '05-05', // Children's Day
+  '06-06', // Memorial Day
+  '08-15', // Liberation Day
+  '10-03', // National Foundation Day
+  '10-09', // Hangeul Day
+  '12-25', // Christmas Day
+]);
+
+type KstTeeTimeMeta = {
+  dayOfWeek: number;
+  hourOfDay: number;
+  monthDay: string;
+};
+
+function getKstTeeTimeMeta(date: Date): KstTeeTimeMeta {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: KST_TIMEZONE,
+    weekday: 'short',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  const weekday = parts.find((part) => part.type === 'weekday')?.value || 'Sun';
+  const month = parts.find((part) => part.type === 'month')?.value || '01';
+  const day = parts.find((part) => part.type === 'day')?.value || '01';
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value || '0');
+
+  return {
+    dayOfWeek: KST_WEEKDAY_INDEX[weekday] ?? 0,
+    hourOfDay: Number.isFinite(hour) ? hour : 0,
+    monthDay: `${month}-${day}`,
+  };
+}
+
 // ============================================================================
 // RISK ASSESSMENT
 // ============================================================================
@@ -492,13 +541,18 @@ export async function aggregateTeeTimeStats(teeTimeId: number): Promise<{
       return sum + avg;
     }, 0);
 
+    const teeTimeMeta = getKstTeeTimeMeta(teeOff);
+    const isWeekend = teeTimeMeta.dayOfWeek === 0 || teeTimeMeta.dayOfWeek === 6;
+    const isHoliday = KR_FIXED_HOLIDAY_MONTH_DAYS.has(teeTimeMeta.monthDay);
+
     const stats = {
       tee_time_id: teeTimeId,
       golf_club_id: teeTime.golf_club_id,
-      day_of_week: teeOff.getDay(),
-      hour_of_day: teeOff.getHours(),
-      is_weekend: teeOff.getDay() === 0 || teeOff.getDay() === 6,
-      is_holiday: false, // TODO: Implement holiday detection
+      day_of_week: teeTimeMeta.dayOfWeek,
+      hour_of_day: teeTimeMeta.hourOfDay,
+      is_weekend: isWeekend,
+      // Lunar holidays/substitute holidays are not included yet.
+      is_holiday: isHoliday,
       total_views: totalSlots * 10, // Mock: assume 10 views per slot
       total_bookings: bookedSlots,
       total_cancellations: cancelledCount,
