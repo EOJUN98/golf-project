@@ -10,8 +10,11 @@
 
 'use server';
 
-import { createClient } from '@supabase/supabase-js';
 import { markNoShow } from '@/utils/cancellationPolicyV2';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { detectReservationStatusColumn } from '@/lib/reservations/statusColumn';
+import { resolveReservationStatusValue } from '@/utils/reservationStatus';
 import {
   MarkNoShowRequest,
   MarkNoShowResponse,
@@ -22,10 +25,10 @@ import {
 } from '@/types/adminManagement';
 import { getCurrentUserWithRoles, requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+async function getAdminActionSupabase() {
+  const adminClient = createSupabaseAdminClientOptional();
+  return adminClient ?? await createSupabaseServerClient();
+}
 
 /**
  * SDD-08: Check admin permissions for current session user
@@ -116,6 +119,18 @@ export async function markReservationAsNoShow(
     }
 
     // Call the mark_no_show function from cancellationPolicyV2
+    const supabase = await getAdminActionSupabase();
+    const statusColumn = await detectReservationStatusColumn(supabase);
+
+    if (statusColumn === 'payment_status') {
+      return {
+        success: false,
+        message: '현재 DB 스키마는 노쇼 처리(status/no_show_marked_at)를 지원하지 않습니다. v1 마이그레이션 적용 후 다시 시도하세요.',
+        userSuspended: false,
+        error: 'LEGACY_SCHEMA_UNSUPPORTED'
+      };
+    }
+
     const result = await markNoShow(reservationId, supabase);
 
     return {
@@ -166,6 +181,8 @@ export async function unsuspendUser(
         error: 'FORBIDDEN'
       };
     }
+
+    const supabase = await getAdminActionSupabase();
 
     // Get current user state
     const { data: user, error: fetchError } = await supabase
@@ -258,6 +275,8 @@ export async function bulkUnsuspendExpiredUsers(): Promise<AdminActionResult> {
       };
     }
 
+    const supabase = await getAdminActionSupabase();
+
     // Find all users with expired suspensions
     const now = new Date().toISOString();
     const { data: expiredUsers, error: fetchError } = await supabase
@@ -339,18 +358,26 @@ export async function getAdminDashboardStats() {
         : 'Unauthorized');
     }
 
+    const supabase = await getAdminActionSupabase();
+    const statusColumn = await detectReservationStatusColumn(supabase);
+    const statusSelect = statusColumn === 'status' ? 'status, payment_status' : 'payment_status';
+
     // Get reservation counts by status
     const { data: reservations, error: resError } = await supabase
       .from('reservations')
-      .select('status');
+      .select(statusSelect);
 
     if (resError) throw resError;
 
+    const normalizedStatuses = (reservations || [])
+      .map((reservation) => resolveReservationStatusValue(reservation as { status?: unknown; payment_status?: unknown }))
+      .filter((value): value is NonNullable<typeof value> => value !== null);
+
     const stats = {
       totalReservations: reservations?.length || 0,
-      paidReservations: reservations?.filter(r => r.status === 'PAID').length || 0,
-      cancelledReservations: reservations?.filter(r => r.status === 'CANCELLED').length || 0,
-      noShowReservations: reservations?.filter(r => r.status === 'NO_SHOW').length || 0
+      paidReservations: normalizedStatuses.filter((status) => status === 'PAID').length,
+      cancelledReservations: normalizedStatuses.filter((status) => status === 'CANCELLED').length,
+      noShowReservations: normalizedStatuses.filter((status) => status === 'NO_SHOW').length
     };
 
     // Get suspended users count
@@ -368,7 +395,7 @@ export async function getAdminDashboardStats() {
     const { data: candidates, error: candidatesError } = await supabase
       .from('reservations')
       .select('id, tee_times!inner(tee_off)')
-      .eq('status', 'PAID')
+      .eq(statusColumn, 'PAID')
       .lt('tee_times.tee_off', gracePeriodEnd.toISOString());
 
     if (candidatesError) throw candidatesError;

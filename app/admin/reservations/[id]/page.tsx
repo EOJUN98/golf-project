@@ -7,24 +7,29 @@
  * - Unsuspend user (if suspended)
  */
 
-import { createClient } from '@supabase/supabase-js';
-import { canUserCancelReservation } from '@/utils/cancellationPolicyV2';
-import { calculateHoursLeft } from '@/utils/reservationDetailHelpers';
+import { redirect } from 'next/navigation';
 import AdminReservationDetail from '@/components/admin/AdminReservationDetail';
 import { AdminReservationDetail as AdminReservationDetailType } from '@/types/adminManagement';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
+import { withCanonicalReservationStatus } from '@/utils/reservationStatus';
 
 export const dynamic = 'force-dynamic';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-async function getAdminReservationDetail(reservationId: string): Promise<AdminReservationDetailType | null> {
+async function getReservationsSupabase() {
+  const adminClient = createSupabaseAdminClientOptional();
+  return adminClient ?? await createSupabaseServerClient();
+}
+
+async function getAdminReservationDetail(
+  supabase: Awaited<ReturnType<typeof getReservationsSupabase>>,
+  reservationId: string
+): Promise<AdminReservationDetailType | null> {
   try {
     // Fetch reservation with all relations
     const { data: reservation, error } = await supabase
@@ -44,6 +49,8 @@ async function getAdminReservationDetail(reservationId: string): Promise<AdminRe
       console.error('[getAdminReservationDetail] Error:', error);
       return null;
     }
+
+    const reservationWithStatus = withCanonicalReservationStatus(reservation as any);
 
     // Extract nested data
     const user = Array.isArray(reservation.users) ? reservation.users[0] : reservation.users;
@@ -66,15 +73,15 @@ async function getAdminReservationDetail(reservationId: string): Promise<AdminRe
     const now = new Date();
     const gracePeriodEnd = new Date(teeOffDate.getTime() + 30 * 60 * 1000); // 30 min grace
     const canMarkNoShow =
-      reservation.status === 'PAID' &&
+      reservationWithStatus.status === 'PAID' &&
       now >= gracePeriodEnd &&
-      !reservation.no_show_marked_at;
+      !reservationWithStatus.no_show_marked_at;
 
     // Check if can unsuspend user
     const canUnsuspendUser = user.is_suspended;
 
     return {
-      reservation,
+      reservation: reservationWithStatus,
       user,
       teeTime,
       golfClub,
@@ -90,7 +97,18 @@ async function getAdminReservationDetail(reservationId: string): Promise<AdminRe
 
 export default async function AdminReservationDetailPage({ params }: PageProps) {
   const resolvedParams = await params;
-  const detail = await getAdminReservationDetail(resolvedParams.id);
+
+  try {
+    await requireAdminAccess();
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      redirect(`/login?redirect=/admin/reservations/${resolvedParams.id}`);
+    }
+    redirect('/forbidden');
+  }
+
+  const supabase = await getReservationsSupabase();
+  const detail = await getAdminReservationDetail(supabase, resolvedParams.id);
 
   if (!detail) {
     return (

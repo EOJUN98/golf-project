@@ -8,18 +8,18 @@
  */
 
 import { Suspense } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { redirect } from 'next/navigation';
 import AdminReservationsList from '@/components/admin/AdminReservationsList';
 import { AdminReservationRow } from '@/types/adminManagement';
 import type { Database } from '@/types/database';
 import { Loader2 } from 'lucide-react';
+import { createSupabaseAdminClientOptional } from '@/lib/supabase/admin';
+import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { requireAdminAccess } from '@/lib/auth/getCurrentUserWithRoles';
+import { detectReservationStatusColumn } from '@/lib/reservations/statusColumn';
+import { CanonicalReservationStatus, resolveReservationStatusValue, withCanonicalReservationStatus } from '@/utils/reservationStatus';
 
 export const dynamic = 'force-dynamic';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 interface PageProps {
   searchParams: Promise<{
@@ -45,12 +45,28 @@ type JoinedReservationRow = ReservationRow & {
   users: UserRow | UserRow[] | null;
 };
 
-async function getReservations(params: ReservationSearchParams): Promise<AdminReservationRow[]> {
+function isReservationStatus(value: string): value is CanonicalReservationStatus {
+  return resolveReservationStatusValue({ status: value }) !== null;
+}
+
+async function getReservationsSupabase() {
+  const adminClient = createSupabaseAdminClientOptional();
+  return adminClient ?? await createSupabaseServerClient();
+}
+
+async function getReservations(
+  supabase: Awaited<ReturnType<typeof getReservationsSupabase>>,
+  params: ReservationSearchParams
+): Promise<AdminReservationRow[]> {
   try {
+    const statusColumn = await detectReservationStatusColumn(supabase);
+    const statusSelect = statusColumn;
+
     let query = supabase
       .from('reservations')
       .select(`
         *,
+        ${statusSelect},
         users!inner (
           id,
           email,
@@ -89,8 +105,13 @@ async function getReservations(params: ReservationSearchParams): Promise<AdminRe
     }
 
     if (params.status) {
-      const statuses = params.status.split(',');
-      query = query.in('status', statuses);
+      const statuses = params.status
+        .split(',')
+        .map((status) => status.trim())
+        .filter(isReservationStatus);
+      if (statuses.length > 0) {
+        query = query.in(statusColumn, statuses);
+      }
     }
 
     if (params.golfClubId) {
@@ -104,8 +125,10 @@ async function getReservations(params: ReservationSearchParams): Promise<AdminRe
       return [];
     }
 
+    const rows = ((data || []) as unknown) as JoinedReservationRow[];
+
     // Transform data to AdminReservationRow format
-    const transformedData: AdminReservationRow[] = ((data || []) as JoinedReservationRow[]).map((item) => {
+    const transformedData: AdminReservationRow[] = rows.map((item) => {
       const teeTime = Array.isArray(item.tee_times) ? item.tee_times[0] : item.tee_times;
       const golfClub = teeTime?.golf_clubs
         ? Array.isArray(teeTime.golf_clubs)
@@ -113,7 +136,8 @@ async function getReservations(params: ReservationSearchParams): Promise<AdminRe
           : teeTime.golf_clubs
         : null;
       const user = Array.isArray(item.users) ? item.users[0] : item.users;
-      const reservation = item as Database['public']['Tables']['reservations']['Row'];
+      const reservationRaw = item as Database['public']['Tables']['reservations']['Row'];
+      const reservation = withCanonicalReservationStatus(reservationRaw);
 
       return {
         reservation: {
@@ -150,7 +174,7 @@ async function getReservations(params: ReservationSearchParams): Promise<AdminRe
   }
 }
 
-async function getGolfClubs() {
+async function getGolfClubs(supabase: Awaited<ReturnType<typeof getReservationsSupabase>>) {
   const { data } = await supabase
     .from('golf_clubs')
     .select('id, name')
@@ -159,9 +183,19 @@ async function getGolfClubs() {
 }
 
 export default async function AdminReservationsPage({ searchParams }: PageProps) {
+  try {
+    await requireAdminAccess();
+  } catch (error) {
+    if (error instanceof Error && error.message === 'UNAUTHORIZED') {
+      redirect('/login?redirect=/admin/reservations');
+    }
+    redirect('/forbidden');
+  }
+
+  const supabase = await getReservationsSupabase();
   const resolvedParams = await searchParams;
-  const reservations = await getReservations(resolvedParams);
-  const golfClubs = await getGolfClubs();
+  const reservations = await getReservations(supabase, resolvedParams);
+  const golfClubs = await getGolfClubs(supabase);
 
   // Calculate stats
   const stats = {
