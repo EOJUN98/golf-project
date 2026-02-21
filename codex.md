@@ -4,7 +4,9 @@
 이 파일은 Codex 작업 내역과 현재 진행 단계를 기록하는 공식 로그다.
 
 ## 헌법 규칙
-1. 모든 작업은 `codex.md`와 `합동작업.md`에 동시에 기록한다.
+1. 모든 작업은 `codex.md`와 합동작업 로그에 동시에 기록한다.
+   - v0 작업 로그: `합동작업.md`
+   - v1.0 작업 로그: `합동작업 v1.md` (+ 최종 스펙은 `docs/sdd/v1.0/*`)
 2. 작업 시작/완료 시점, 변경 파일, 핵심 결과, 남은 이슈를 반드시 남긴다.
 3. 배포/빌드 실패 원인은 재현 정보(파일/라인/에러 요약)와 함께 기록한다.
 
@@ -1004,3 +1006,832 @@
   - 단, 현재 실행 중인 세션에서는 MCP 리소스가 여전히 0개로 보임 → Codex 세션 재시작/재연결이 필요할 가능성이 큼
 - 남은 이슈:
   - 재시작 후에도 리소스가 0개면: 네트워크/DNS 제한 또는 인증 토큰 문제(`SUPABASE_ACCESS_TOKEN`) 가능성 점검 필요
+
+### 2026-02-14 49차 기록 (v1.0 SDD/공동로그 도입)
+- 작업:
+  - v1.0부터 “스펙 선행(SDD) 기반 개발”로 전환하기 위한 문서 스캐폴딩 추가
+  - Claude 등 타 에이전트 공유용 로그 파일 `합동작업 v1.md` 도입
+- 변경 파일:
+  - `docs/sdd/v1.0/README.md`
+  - `docs/sdd/v1.0/00-project.md`
+  - `docs/sdd/v1.0/99-v0-gap-backlog.md`
+  - `docs/sdd/v1.0/_templates/page-sdd.md`
+  - `docs/sdd/v1.0/01-admin/README.md`
+  - `docs/sdd/v1.0/01-admin/permissions-matrix.md`
+  - `docs/sdd/v1.0/01-admin/admin-dashboard.md`
+  - `docs/sdd/v1.0/01-admin/admin-tee-times.md`
+  - `합동작업 v1.md`
+  - `codex.md`
+  - `합동작업.md`
+- 결과:
+  - v1.0 개발은 `docs/sdd/v1.0/*`를 SSOT로 두고 진행할 수 있는 최소 구조 확보
+  - v1.0 작업 로그는 `합동작업 v1.md`에 기록하도록 규칙 업데이트
+- 남은 이슈:
+  - v1.0 핵심 정의(매출/타임존/상태/Service Role 정책)는 `docs/sdd/v1.0/00-project.md`에서 확정 필요
+
+### 2026-02-14 50차 기록 (MCP 추가: sequential-thinking)
+- 작업:
+  - 사용자 요청으로 MCP 서버 `sequential-thinking` 추가
+- 변경:
+  - 글로벌 Codex MCP 설정(레포 외부) 업데이트
+  - 레포 로그 파일 업데이트: `codex.md`, `합동작업 v1.md`
+- 실행 명령:
+  - `codex mcp add sequential-thinking npx -y @modelcontextprotocol/server-sequential-thinking`
+- 결과:
+  - `codex mcp get sequential-thinking` 기준 등록/활성화 확인
+  - `transport: stdio`, `command: npx`, `args: -y @modelcontextprotocol/server-sequential-thinking`
+- 남은 이슈:
+  - 없음
+
+### 2026-02-14 51차 기록 (VSCode MCP 설정: testsprite)
+- 작업:
+  - 사용자 요청에 따라 VSCode workspace MCP 설정에 `testsprite` 서버 추가
+- 변경 파일:
+  - `.vscode/mcp.json`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `testsprite` MCP 서버 실행 커맨드 설정 완료: `npx -y @testsprite/testsprite-mcp@latest`
+  - API 키는 파일에 평문 저장하지 않고 VSCode 입력 변수(`${input:testsprite-api-key}`)로 구성
+- 남은 이슈:
+  - VSCode에서 MCP 시작 시 API 키 입력 필요
+
+### 2026-02-16 52차 기록 (v1.0 프라이싱 우선순위 스펙 반영)
+- 작업:
+  - 사용자 지시에 따라 v1.0 핵심 우선순위를 "프라이싱 엔진"으로 문서 고정
+  - 단계 정의(0: crawler 분류, 1: 4시간 가격수집, 2: 메모 저장, 3: 엔진 연동)를 SDD로 작성
+  - admin 티타임 생성/수정 DB 반영 요구사항을 AC/P0로 백로그 반영
+- 변경 파일:
+  - `docs/sdd/v1.0/README.md`
+  - `docs/sdd/v1.0/00-project.md`
+  - `docs/sdd/v1.0/02-pricing-engine-v1.md`
+  - `docs/sdd/v1.0/V1-PRIORITY-UPDATE.md`
+  - `docs/sdd/v1.0/99-v0-gap-backlog.md`
+  - `docs/sdd/v1.0/01-admin/README.md`
+  - `docs/sdd/v1.0/01-admin/admin-crawler.md`
+  - `docs/sdd/v1.0/01-admin/admin-tee-times.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - v1.0 개발 시 참조할 공식 스펙 문서 세트가 우선순위 기반으로 업데이트됨
+- 남은 이슈:
+  - pricing factor별 가중치/캡 정책 상세 수치 확정 필요
+
+### 2026-02-19 53차 기록 (섹터별 사전 설계 게이트 강제)
+- 작업:
+  - 사용자 지시에 따라 "섹터 작업 전 설계 완료 후 구현" 원칙을 v1.0 문서에 반영
+- 변경 파일:
+  - `docs/sdd/v1.0/README.md`
+  - `docs/sdd/v1.0/SECTOR-WORKFLOW.md` (신규)
+  - `docs/sdd/v1.0/_templates/sector-design-gate.md` (신규)
+  - `docs/sdd/v1.0/V1-PRIORITY-UPDATE.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 섹터별 Design Gate 및 DoR/DoD 체크리스트 도입
+  - 승인 전 구현 금지 규칙이 문서 기준으로 고정됨
+- 남은 이슈:
+  - 없음
+
+### 2026-02-19 54차 기록 (Pricing/Crawler C1/C3 진행 + C2 블로커)
+- 작업:
+  - Pricing/Crawler 섹터 게이트 문서 작성 후 구현 착수
+  - C1 수행: `.github/workflows/crawler-ingest.yml`에 `GOLFROCK_LOGIN_ID/PW` env 주입 반영
+  - C3 수행: `crawler/src/test-golfrock-*.mjs` 임시 스크립트 4개 삭제
+  - C2 수행 시도: `node src/discover-teeup-club-ids.mjs --from=1 --to=80 --concurrency=8 --write-site=teeupnjoy`
+- 변경 파일:
+  - `docs/sdd/v1.0/sectors/pricing-crawler-gate.md`
+  - `.github/workflows/crawler-ingest.yml`
+  - `crawler/src/test-golfrock-login.mjs` (삭제)
+  - `crawler/src/test-golfrock-deep.mjs` (삭제)
+  - `crawler/src/test-golfrock-ajax-params.mjs` (삭제)
+  - `crawler/src/test-golfrock-html-sample.mjs` (삭제)
+  - `docs/sdd/v1.0/README.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - C1/C3 완료
+  - `npm --prefix crawler run check` 통과
+- 남은 이슈:
+  - C2 blocked: Playwright Chromium launch가 `SIGTRAP`으로 종료되어 discovery 실행 실패
+
+### 2026-02-19 55차 기록 (Admin Tee-Times 섹터 게이트 + TA/TB 구현)
+- 작업:
+  - Admin Tee-Times 섹터 설계 게이트 문서 작성 후 구현 착수
+  - `/api/admin/tee-times`를 GET/POST/호환 PATCH(action)까지 확장
+  - `/api/admin/tee-times/[id]` PATCH/DELETE 신규 추가
+  - `app/admin/tee-times/page.tsx`를 API 기반 CRUD 호출로 전환
+- 변경 파일:
+  - `docs/sdd/v1.0/sectors/admin-tee-times-gate.md`
+  - `app/api/admin/tee-times/route.ts`
+  - `app/api/admin/tee-times/[id]/route.ts`
+  - `app/admin/tee-times/page.tsx`
+  - `docs/sdd/v1.0/01-admin/admin-tee-times.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - BOOKED 수정/상태변경 시 409 반환
+  - CLUB_ADMIN club scope 검증 추가
+  - lint/build 통과
+- 남은 이슈:
+  - `/admin/tee-times` 실제 브라우저 수동 검증 필요
+
+### 2026-02-19 56차 기록 (Pricing/Crawler C2 해소 + C4 완료)
+- 작업:
+  - C2 블로커 해소를 위해 `discover-teeup-club-ids.mjs`를 Playwright 방식에서 direct HTTP discovery 방식으로 전환
+  - C4 4개 window 크롤링 재실행 (`WEEK_BEFORE`, `TWO_DAYS_BEFORE`, `SAME_DAY_MORNING`, `IMMINENT_3H`)
+  - DB 직접 SQL 조회로 적재 결과 검증
+- 변경 파일:
+  - `crawler/src/discover-teeup-club-ids.mjs`
+  - `docs/sdd/v1.0/sectors/pricing-crawler-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - C2 검증 완료: `external_price_targets`의 teeupnjoy 타겟 `club_ids_count=14` 확인
+  - C4 실행 로그:
+    - `WEEK_BEFORE` rows=17
+    - `TWO_DAYS_BEFORE` rows=20
+    - `SAME_DAY_MORNING` rows=2
+    - `IMMINENT_3H` rows=6
+  - 최근 1시간 스냅샷 SQL 검증에서 site/window별 데이터 적재 확인
+- 남은 이슈:
+  - C5(`/admin/crawler` UI 수동 확인) 미완료
+  - `report-snapshot-health.mjs`는 현재 환경에서 `fetch failed`로 실패하여 SQL 조회로 대체 검증함
+
+### 2026-02-19 57차 기록 (Pricing/Crawler C5 완료 + DEMO_MODE 인증 버그 수정)
+- 작업:
+  - C5 수행: 로컬 DEMO 모드에서 `/admin/crawler` UI 렌더링 검증
+  - 검증 중 발견된 DEMO 인증 버그 수정 (`lib/auth/getCurrentUserWithRoles.ts`)
+    - 비존재 컬럼 `users.segment_type` 조회 제거
+    - DEMO_MODE에서 사용자 조회 실패 시 fallback demo admin 반환
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+  - `docs/sdd/v1.0/sectors/pricing-crawler-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `/admin/crawler` 응답 코드 200 확인 (기존 307 로그인 리다이렉트 해소)
+  - 페이지 핵심 지표 렌더링 확인: 최근 30일, 골프장 수, 스냅샷 수, 지역 탭/코스 목록
+  - Pricing/Crawler 섹터 게이트 상태 `Completed (C1~C5 Done)`로 업데이트
+  - lint/build 통과
+- 남은 이슈:
+  - Playwright 기반 상호작용 자동 검증은 로컬 Chromium `SIGTRAP` 환경 이슈로 미실행
+
+### 2026-02-19 58차 기록 (Admin Tee-Times 수동 QA 완료 + 실버그 보완)
+- 작업:
+  - `Admin/Tee-Times` 섹터 수동 QA 수행 (로컬 API end-to-end 시나리오)
+  - QA 중 확인된 서버 버그 보완
+- 변경 파일:
+  - `app/api/admin/tee-times/route.ts`
+  - `app/api/admin/tee-times/[id]/route.ts`
+  - `lib/auth/getCurrentUserWithRoles.ts`
+  - `docs/sdd/v1.0/sectors/admin-tee-times-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - API 시나리오 검증 완료:
+    - GET(200), POST(200), PATCH `:id`(200), PATCH action BLOCKED/OPEN(200)
+    - DELETE BLOCKED(409), DELETE OPEN(200), 재조회 삭제 반영 확인
+  - BOOKED 수정 거부 검증:
+    - 테스트 row를 BOOKED로 전환 후 PATCH `:id` = 409 CONFLICT 확인
+  - 버그 수정:
+    - POST 생성 시 `current_price` 누락으로 500 발생 → `current_price=base_price`로 수정
+    - DEMO fallback user의 비-UUID `updated_by` 쓰기 실패 가능성 방어 로직 추가
+    - API catch 에러 메시지 추출 보강(`Unknown error` 개선)
+  - `/admin/tee-times` 응답 200 확인
+  - 게이트 상태 `Completed`로 업데이트
+- 남은 이슈:
+  - DEMO 모드에서 service-role 기반 사용자 자동 조회는 현재 fallback으로 동작(기능은 정상, 로그 노이즈 존재)
+
+### 2026-02-19 59차 기록 (Admin Dashboard 섹터 D1~D3 구현 완료)
+- 작업:
+  - Admin Dashboard 섹터 게이트 작성 후 D1~D3 구현
+  - D1: 최근 14일(KST) 매출 시계열 + `ok/empty/error` 상태 분리
+  - D2: AI Pricing Engine 카드에 샘플 티타임 실계산 헬스 상태 반영
+  - D3: 대시보드 티타임 PATCH 실패 메시지 파싱 개선
+- 변경 파일:
+  - `docs/sdd/v1.0/sectors/admin-dashboard-gate.md` (신규 후 완료 업데이트)
+  - `app/admin/page.tsx`
+  - `components/AdminDashboardNew.tsx`
+  - `docs/sdd/v1.0/01-admin/admin-dashboard.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `/admin` 200 응답 확인
+  - 대시보드 렌더링 확인:
+    - `일별 매출 추이 (최근 14일)` 문구 반영
+    - empty 상태 메시지와 AI 샘플 결과 문구 반영
+  - PATCH validation 에러 응답(`id는 양의 정수여야 합니다.`) 확인으로 D3 검증
+  - `admin-dashboard` 섹터 게이트 상태 Completed
+- 남은 이슈:
+  - 없음
+
+### 2026-02-19 60차 기록 (DEMO 조회 안정화 - fallback 로그 노이즈 해소)
+- 작업:
+  - DEMO 사용자 조회 경로에서 users 비존재 컬럼 선택으로 인해 fallback되는 문제 수정
+- 변경 파일:
+  - `lib/auth/getCurrentUserWithRoles.ts`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `/admin` 접근 시 DEMO 유저가 `superadmin@tugol.dev`로 정상 매칭
+  - `User lookup failed, using fallback...` 로그 노이즈 해소
+  - lint/build 통과
+- 남은 이슈:
+  - 없음
+
+### 2026-02-19 61차 기록 (Pricing Engine Core 섹터 완료 + MARKET_PRICE 실검증)
+- 작업:
+  - `/api/pricing`의 market snapshot 조회 경로를 admin client optional 사용으로 보완
+    (`external_price_snapshots` RLS가 service_role 전용이라 기존 server client 조회 0건 문제 해결)
+  - Pricing Engine Core 게이트 AC/체크리스트 완료 처리
+- 변경 파일:
+  - `app/api/pricing/route.ts`
+  - `docs/sdd/v1.0/sectors/pricing-engine-core-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 임시 snapshot 삽입 후
+    `/api/pricing?golfClubId=1&date=2026-01-17&limit=3`에서
+    `MARKET_PRICE` factor 노출 및 `deltaFromMarket=10000` 확인
+  - 임시 snapshot 삭제 후 동일 API 재조회에서 `snapshotKeys=0`,
+    `MARKET_PRICE` 미노출(기존 로직 fallback) 확인
+  - pricing-engine-core 섹터 게이트 상태 `Completed (P1~P3 Done)` 업데이트
+- 남은 이슈:
+  - 없음
+
+### 2026-02-19 62차 기록 (Pricing Crawler Step2 메모/traits 섹터 완료)
+- 작업:
+  - Pricing/Crawler Step2 설계 게이트 작성 및 승인 후 구현
+  - 스냅샷 메모 API 신설:
+    - `GET /api/admin/crawler/snapshots`
+    - `PATCH /api/admin/crawler/snapshots`
+  - `/admin/crawler` 상세 패널에 가격 행 메모/특성 입력 UI 추가
+  - `external_price_snapshots.payload.manual_note` 구조로 메모/traits/작성자/수정시각 저장
+- 변경 파일:
+  - `docs/sdd/v1.0/sectors/pricing-crawler-notes-gate.md`
+  - `app/api/admin/crawler/snapshots/route.ts`
+  - `components/admin/CrawlerMonitorClient.tsx`
+  - `docs/sdd/v1.0/01-admin/admin-crawler.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - API 검증:
+    - GET snapshots(포천힐스) 200
+    - PATCH note/traits 저장 200
+    - GET 재조회에서 `manualNote.updatedByEmail/updatedAt` 반영 확인
+    - PATCH 빈 note+traits로 `manualNote=null` 확인
+    - 잘못된 traits 타입 요청 400 확인
+    - 비로그인(non-demo) GET 401 확인
+  - 게이트 상태 `Completed (N1~N4 Done)` 업데이트
+  - lint/build 통과
+- 남은 이슈:
+  - 없음
+
+### 2026-02-19 63차 기록 (Pricing Engine Step3 traits 연동 섹터 완료)
+- 작업:
+  - Step3 섹터 게이트 작성 후 traits 연동 구현
+  - `calculatePricing`에 traits 입력(`marketTraits`) 추가
+  - traits factor 구현:
+    - `TRAIT_PEAK_SEASON`
+    - `TRAIT_OFF_SEASON`
+    - `TRAIT_EVENT`
+    - `TRAIT_LOW_DEMAND`
+  - `/api/pricing`에서 snapshot `payload.manual_note` 파싱 후 엔진에 전달
+  - `/api/pricing` `marketReference`에 `manualNote/manualTraits/manualNoteUpdated*` 노출
+- 변경 파일:
+  - `docs/sdd/v1.0/sectors/pricing-engine-traits-gate.md`
+  - `utils/pricingEngine.ts`
+  - `app/api/pricing/route.ts`
+  - `docs/sdd/v1.0/02-pricing-engine-v1.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 임시 snapshot traits(`비수기`,`이벤트`,`저수요`)로 `/api/pricing` 호출 시
+    `TRAIT_OFF_SEASON`, `TRAIT_EVENT`, `TRAIT_LOW_DEMAND` 노출 확인
+  - 동일 row traits를 `성수기`로 변경 후 `TRAIT_PEAK_SEASON` 노출 확인
+  - 임시 row 삭제 후 traits factor 미노출 확인
+  - payload가 string JSON인 비정상 row에서도 `/api/pricing status=success` 확인 후 정리
+  - 섹터 게이트 상태 `Completed (T1~T4 Done)` 업데이트
+- 남은 이슈:
+  - 없음
+
+### 2026-02-19 64차 기록 (Admin Reservations 하드닝 섹터 진행)
+- 작업:
+  - `Admin Reservations` 섹터 게이트 작성 후 보안/조회 경로 하드닝 구현
+  - `/admin/reservations`, `/admin/reservations/[id]`에 관리자 가드(`requireAdminAccess`) 적용
+  - 페이지 데이터 클라이언트를 `createSupabaseAdminClientOptional()` 우선 + `createSupabaseServerClient()` fallback으로 통일
+  - `app/admin/actions.ts` 전역 anon fallback client 제거, 액션 실행 시점 client 획득 방식으로 전환
+  - 예약 상태 필터 타입 안정화(`ReservationStatus` guard) 및 build 타입 오류 수정
+- 변경 파일:
+  - `docs/sdd/v1.0/sectors/admin-reservations-hardening-gate.md`
+  - `app/admin/reservations/page.tsx`
+  - `app/admin/reservations/[id]/page.tsx`
+  - `app/admin/actions.ts`
+  - `docs/sdd/v1.0/01-admin/admin-reservations.md`
+  - `docs/sdd/v1.0/01-admin/README.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 관리자 페이지의 인증/클라이언트 경로가 다른 admin 섹터와 동일 패턴으로 정렬됨
+  - `npm run lint` 통과
+  - `npm run build` 통과
+  - 게이트 상태 업데이트: `Completed (Implementation Done, Runtime QA Partially Blocked)`
+- 남은 이슈:
+  - sandbox `listen EPERM` 제약으로 `/admin/reservations*` 런타임 HTTP 수동검증은 환경 해소 후 추가 확인 필요
+
+### 2026-02-19 65차 기록 (Admin No-Show 섹터 완료 + 예약 스키마 불일치 가드)
+- 작업:
+  - `/admin/no-show` 페이지/클라이언트 구현 완료 상태에서 API 런타임 500 원인 분석
+  - Supabase 실DB 점검 결과 `reservations.status` 미존재, `payment_status` 레거시 스키마 확인
+  - `GET /api/admin/no-show`에 status 컬럼 자동 감지(`status`/`payment_status`) 추가
+  - 레거시 스키마에서 POST 노쇼 확정은 불가하므로 `409` 가이드 에러로 명시화
+  - no-show 섹터 게이트/문서 완료 상태로 업데이트
+- 변경 파일:
+  - `app/api/admin/no-show/route.ts`
+  - `docs/sdd/v1.0/sectors/admin-no-show-gate.md`
+  - `docs/sdd/v1.0/01-admin/admin-no-show.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `GET /api/admin/no-show?date=2026-02-19` -> 200 (`success:true`)
+  - `POST /api/admin/no-show` invalid payload -> 400 유지
+  - `POST /api/admin/no-show` valid payload on legacy schema -> 409(마이그레이션 가이드)
+  - `npm run lint` / `npm run build` 통과
+- 남은 이슈:
+  - `reservations`를 v1 스키마(`status`, `no_show_marked_at` 등)로 정합화해야 실제 노쇼 확정 처리 가능
+
+### 2026-02-19 66차 기록 (Admin Reservations 스키마 호환 섹터 완료)
+- 작업:
+  - no-show 섹터에서 확인된 `reservations.status`/`payment_status` 스키마 불일치 영향 범위를 admin 예약/통계로 확장 점검
+  - status 컬럼 자동 감지 유틸 추가: `lib/reservations/statusColumn.ts`
+  - canonical status 매핑 유틸 추가: `utils/reservationStatus.ts`
+  - `/admin/reservations` 목록 쿼리/필터를 status 컬럼 감지 기반으로 호환화
+  - `/admin/reservations/[id]` 상세에서 canonical status 기반 `canMarkNoShow` 계산으로 보정
+  - `app/admin/actions.ts`의 dashboard 통계/no-show 액션을 legacy 스키마 대응
+- 변경 파일:
+  - `lib/reservations/statusColumn.ts`
+  - `utils/reservationStatus.ts`
+  - `app/admin/reservations/page.tsx`
+  - `app/admin/reservations/[id]/page.tsx`
+  - `app/admin/actions.ts`
+  - `app/api/admin/no-show/route.ts`
+  - `docs/sdd/v1.0/sectors/admin-reservations-schema-compat-gate.md`
+  - `docs/sdd/v1.0/01-admin/admin-reservations.md`
+  - `docs/sdd/v1.0/sectors/admin-reservations-hardening-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `/admin/reservations` -> 200
+  - `/admin/reservations?status=PAID` -> 200
+  - `/admin` -> 200
+  - `npm run lint` / `npm run build` 통과
+- 남은 이슈:
+  - 실제 NO_SHOW/COMPLETED 운용을 위해 reservations v1 마이그레이션 적용 필요
+
+### 2026-02-20 67차 기록 (Reservations v1 스키마 정합화 섹터 완료)
+- 작업:
+  - 원격 DB migration drift 확인: `reservations` 핵심 컬럼 부재, `cancellation_policies/settlements` 미존재 상태 진단
+  - 보정 마이그레이션 추가: `supabase/migrations/20260219133000_reservations_v1_schema_alignment.sql`
+  - Supabase migration 적용: `reservations_v1_schema_alignment_20260219`
+  - no-show/reservations 호환 코드 유지 + 스키마 복구 후 기본 경로 동작 검증
+  - 섹터 게이트/운영 문서 완료 업데이트
+- 변경 파일:
+  - `supabase/migrations/20260219133000_reservations_v1_schema_alignment.sql`
+  - `docs/sdd/v1.0/sectors/reservations-v1-schema-alignment-gate.md`
+  - `docs/sdd/v1.0/sectors/admin-no-show-gate.md`
+  - `docs/sdd/v1.0/01-admin/admin-no-show.md`
+  - `docs/sdd/v1.0/01-admin/admin-reservations.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - DB 검증: `reservations.status/no_show_marked_at/settlement_id` 등 핵심 컬럼 존재 확인
+  - DB 검증: `cancellation_policies`, `settlements`, `settlement_summary` 존재 확인
+  - 런타임: `/api/admin/no-show` GET 200, POST(test-id) 400(예약 미존재)
+  - 런타임: `/admin/no-show` 200, `/admin/settlements` 200
+  - 정적검증: `npm run lint`, `npm run build` 통과
+- 남은 이슈:
+  - 정산/예약 액션의 기존 글로벌 service-role client 사용 코드는 별도 하드닝 섹터로 분리 정리 필요
+
+### 2026-02-20 68차 기록 (Admin Settlements 하드닝 섹터 완료)
+- 작업:
+  - settlements 페이지 3개(list/new/detail)에 `requireAdminAccess` 가드 적용
+  - settlements 페이지/액션의 global `createClient` 제거
+  - 데이터 경로를 `createSupabaseAdminClientOptional() -> createSupabaseServerClient()`로 통일
+  - settlements 하드닝 섹터 게이트/문서 정리
+- 변경 파일:
+  - `app/admin/settlements/page.tsx`
+  - `app/admin/settlements/new/page.tsx`
+  - `app/admin/settlements/[id]/page.tsx`
+  - `app/admin/settlements/actions.ts`
+  - `docs/sdd/v1.0/sectors/admin-settlements-hardening-gate.md`
+  - `docs/sdd/v1.0/01-admin/admin-settlements.md`
+  - `docs/sdd/v1.0/01-admin/README.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 런타임: `/admin/settlements` 200
+  - 런타임: `/admin/settlements/new` 200
+  - 런타임: `/admin/settlements/non-existent-id` 200(안전 fallback)
+  - 런타임: `/admin/settlements?status=DRAFT` 200
+  - 정적검증: `npm run lint`, `npm run build` 통과
+- 남은 이슈:
+  - settlements 상세의 invalid UUID 요청 시 서버 로그 경고(`22P02`)는 후속 입력 검증 섹터에서 개선 가능
+
+### 2026-02-20 기록 (Settlements UUID 입력 검증)
+- 작업: settlements 상세/액션의 UUID 입력 검증 추가
+- 변경 파일:
+  - `app/admin/settlements/[id]/page.tsx`
+  - `app/admin/settlements/actions.ts`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 비UUID ID 접근 시 DB 에러 없이 안전한 fallback 렌더
+  - `updateSettlementStatus/Notes` 액션에서 비UUID settlement_id 차단
+  - `npm run lint`, `npm run build` 통과
+- 남은 이슈:
+  - 없음 (settlements 섹터 UUID 검증 완료)
+
+### 2026-02-20 69차 기록 (Settlements 권한 정합성 + RLS 하드닝)
+- 작업:
+  - `app/admin/settlements/actions.ts` 권한 로직 정렬
+  - `updateSettlementStatus`/`updateSettlementNotes`에서 CLUB_ADMIN 소속 클럽 스코프 강제
+  - `LOCKED` 상태 전환을 SUPER_ADMIN 전용으로 고정
+  - `app/admin/settlements/[id]/page.tsx` 액션 버튼 권한 계산을 역할 기반으로 수정
+  - `types/database.ts`에 `settlement_summary` view + 외부 가격 테이블 타입 추가
+  - 신규 마이그레이션 추가: `20260220143000_rls_hardening_settlements_reservations.sql`
+  - Supabase 원격 적용: `rls_hardening_settlements_reservations`
+- 변경 파일:
+  - `app/admin/settlements/actions.ts`
+  - `app/admin/settlements/[id]/page.tsx`
+  - `types/database.ts`
+  - `supabase/migrations/20260220143000_rls_hardening_settlements_reservations.sql`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - settlements 화면/액션 권한 불일치 해소 (CLUB_ADMIN confirm 가능, lock 불가)
+  - DB RLS 상태 복구:
+    - `reservations`, `settlements`, `cancellation_policies` 모두 RLS `enabled=true`
+    - 정책 14개 적용 확인
+    - `anon/authenticated` 과도 권한 제거 후 최소 권한 재부여
+  - 정적 검증:
+    - `npm run lint` 통과
+    - `npm run build` 통과
+
+### 2026-02-20 70차 기록 (Security Advisor 하드닝 완료)
+- 작업:
+  - 신규 마이그레이션 작성/적용: `security_advisor_hardening`
+  - 파일: `supabase/migrations/20260220152000_security_advisor_hardening.sql`
+  - 조치:
+    - `admin_user_stats`, `settlement_summary` 뷰 `security_invoker=true`
+    - 함수 9개 `search_path=public` 고정
+    - `golf_clubs`, `weather_cache` RLS 활성화 및 정책 추가
+- 결과:
+  - Supabase Security Advisor에서 코드/DB 조치 가능한 경고 전부 해소
+  - 잔여 1건: `auth_leaked_password_protection` (Auth 콘솔 설정 필요)
+  - 검증:
+    - DB: `golf_clubs/weather_cache` RLS enabled 확인
+    - DB: 두 뷰 `reloptions=[security_invoker=true]` 확인
+    - DB: 대상 함수 `proconfig=[search_path=public]` 확인
+    - 로컬: `npm run lint`, `npm run build` 통과
+
+### 2026-02-20 71차 기록 (Admin 데이터 신선도 복구 섹터 완료)
+- 작업:
+  - 신규 게이트: `docs/sdd/v1.0/sectors/admin-data-freshness-gate.md` 작성/완료
+  - `app/admin/settings/actions.ts`를 미래 14일 top-up 방식으로 개편
+    - tee_times/weather_cache 누락 row만 삽입 (idempotent)
+  - `tee_times` 타입/코드 정합성 수정
+    - `types/database.ts`에 `current_price`, `currency`, `created_at` 반영
+    - 티타임 생성/가격 수정 시 `current_price` 동기화
+      - `app/admin/tee-times/actions.ts`
+      - `app/api/admin/tee-times/route.ts`
+      - `app/api/admin/tee-times/[id]/route.ts`
+  - settings 화면 문구를 “데이터 보정” 컨셉으로 갱신
+    - `app/admin/settings/page.tsx`
+  - 원격 one-off 복구 SQL 실행
+- 결과:
+  - 원격 DB 보충: `+126 tee_times`, `+140 weather_cache`
+  - `open_future_tee_times`가 `0 -> 117`로 회복
+  - `/api/pricing?limit=5` 응답이 빈 배열에서 실제 데이터로 정상화
+  - 정적 검증:
+    - `npm run lint` 통과
+    - `npm run build` 통과
+
+### 2026-02-20 72차 기록 (Admin 대시보드 가시성 복구 섹터 완료)
+- 작업:
+  - 신규 게이트: `docs/sdd/v1.0/sectors/admin-dashboard-visibility-gate.md` 작성/완료
+  - `components/AdminDashboardNew.tsx` 수정
+    - 매출 차트: `empty` 상태에서도 14일 막대 차트 유지
+    - 매출 차트: `error` 상태에서만 차트 대신 오류 메시지 렌더
+    - empty 안내 문구를 차트 하단에 분리
+    - 티타임 탭 컬럼명 `일시 (KST)`로 변경
+    - 티타임 datetime 렌더를 `Asia/Seoul` 고정 formatter로 통일
+    - 가격 수정 후 로컬 상태에서 `current_price`도 동기화
+  - 문서 정합성 업데이트:
+    - `docs/sdd/v1.0/01-admin/admin-dashboard.md` chart empty 상태 정의 보강
+- 변경 파일:
+  - `components/AdminDashboardNew.tsx`
+  - `docs/sdd/v1.0/01-admin/admin-dashboard.md`
+  - `docs/sdd/v1.0/sectors/admin-dashboard-visibility-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `reservations=0`에서도 `/admin` 매출 차트가 "비어 보이지 않게" 렌더되어 운영 가시성 회복
+  - 티타임 관리 탭 시간대/날짜 혼동 감소 (KST 고정)
+  - 검증: `npm run lint`, `npm run build` 통과
+
+### 2026-02-20 73차 기록 (Crawler Step0/1-A/1-B/1-C 우선 섹터 완료)
+- 작업:
+  - 신규 게이트 작성/완료:
+    - `docs/sdd/v1.0/sectors/crawler-step0-step1-gate.md`
+  - Step 1-A:
+    - `app/api/admin/crawler/run/route.ts` 신규
+    - 권한: `requireAdminAccess` 또는 `x-cron-secret`
+    - 실행: `crawler/src/crawl-final-prices.mjs` 호출 + snapshot 결과 집계 응답
+  - Step 1-B:
+    - `app/api/cron/crawl-prices/route.ts` 신규
+    - `Authorization: Bearer CRON_SECRET` 검증 후 run API 연계
+    - `vercel.json` cron(4시간 간격) 신규
+  - Step 0 + 1-C:
+    - `app/admin/crawler/page.tsx`에 URL searchParams 필터 + snapshotDetails 서버 조회 추가
+    - `components/admin/CrawlerMonitorClient.tsx`에
+      - `FilterBar` (지역/골프장/기간/상태)
+      - `SnapshotTable` (가격 히스토리)
+      - `CrawlStatusPanel` (수동 실행 버튼 + 결과 카드)
+      추가
+  - 문서 정합성:
+    - `docs/sdd/v1.0/01-admin/admin-crawler.md` API/AC 업데이트
+- 변경 파일:
+  - `app/admin/crawler/page.tsx`
+  - `components/admin/CrawlerMonitorClient.tsx`
+  - `app/api/admin/crawler/run/route.ts`
+  - `app/api/cron/crawl-prices/route.ts`
+  - `vercel.json`
+  - `docs/sdd/v1.0/01-admin/admin-crawler.md`
+  - `docs/sdd/v1.0/sectors/crawler-step0-step1-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 빌드 산출 라우트에 신규 경로 확인:
+    - `/api/admin/crawler/run`
+    - `/api/cron/crawl-prices`
+  - 런타임 검증:
+    - `/admin/crawler` -> 200
+    - `POST /api/admin/crawler/run` (`targetIds:[1]`) -> `success:true`, `total:1`, `noData:1`
+    - `GET /api/cron/crawl-prices` -> `500 CRON_SECRET not configured` (보호 동작)
+  - 정적 검증:
+    - `npm run lint` 통과
+    - `npm run build` 통과
+- 남은 이슈:
+  - Cron 성공 경로 최종 검증은 `CRON_SECRET` 설정 후 필요
+
+### 2026-02-20 74차 기록 (Crawler 실수집 검증 + run API 결과 확장)
+- 작업:
+  - 실수집 실행: `node crawler/src/crawl-final-prices.mjs --limit=3`
+  - `app/api/admin/crawler/run/route.ts` 보강:
+    - `authRequired` 카운트 추가
+    - `siteBreakdown`(site별 total/succeeded/noData/authRequired/failed) 추가
+    - target 상태 분류에 `AUTH_REQUIRED` 별도 처리
+  - `components/admin/CrawlerMonitorClient.tsx` 보강:
+    - 수동 실행 결과 카드에 `인증필요` 항목 추가
+    - 사이트별 결과 테이블 추가
+  - 게이트 문서 QA 체크 업데이트
+- 변경 파일:
+  - `app/api/admin/crawler/run/route.ts`
+  - `components/admin/CrawlerMonitorClient.tsx`
+  - `docs/sdd/v1.0/sectors/crawler-step0-step1-gate.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - DB 최근 30분 기준 실수집 확인:
+    - golfrock: `29/29 AVAILABLE`
+    - golfpang: `16/17 AVAILABLE`
+    - teeupnjoy: `0/2 AVAILABLE` (NO_DATA)
+  - 정적 검증:
+    - `npm run lint` 통과
+    - `npm run build` 통과
+- 남은 이슈:
+  - teeupnjoy 수집률 개선(클럽/날짜 범위 튜닝)은 다음 섹터로 분리
+  - cron 성공 경로는 `CRON_SECRET` 설정 후 재검증 필요
+
+### 2026-02-20 75차 기록 (teeupnjoy 단독 복구 검증 완료)
+- 작업:
+  - `crawler/src/crawl-final-prices.mjs` teeup 경로를 기준으로 단독 실행 검증 진행
+  - 드라이런:
+    - `node src/crawl-final-prices.mjs --target=1 --dry-run`
+  - 실저장:
+    - `node src/crawl-final-prices.mjs --target=1`
+  - Supabase SQL 재검증:
+    - 최근 30분 `external_price_snapshots` 사이트/상태 집계
+    - `site_code='teeupnjoy'` 최신 10건 상세 조회
+- 변경 파일:
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - teeup 드라이런: `rows=16`, `failed=0`
+  - teeup 실저장: `Saved 16 row(s)`, `failed=0`
+  - DB 최근 30분:
+    - `golfrock AVAILABLE=29`
+    - `golfpang AVAILABLE=16, NO_DATA=1`
+    - `teeupnjoy AVAILABLE=15, NO_DATA=3`
+  - 결론: teeup도 실제 수집/저장 경로가 정상 동작하며, 수집 근거를 로그+DB로 확인함
+
+### 2026-02-20 76차 기록 (Cron 성공 경로 재검증 + API 안정화 패치)
+- 작업:
+  - `app/api/cron/crawl-prices/route.ts`
+    - run API 내부 호출 URL 해석을 request origin 우선으로 수정
+    - 로컬/프리뷰 환경에서 `localhost:3000` 고정 fallback로 인한 `fetch failed` 방지
+  - `app/api/admin/crawler/run/route.ts`
+    - target select에 `site_code` 누락된 버그 수정
+  - 런타임 검증:
+    - dev(3010, `CRON_SECRET=local-cron-secret`)에서 cron 인증/미인증 호출 확인
+    - `/admin/crawler` 200 확인
+    - `/api/admin/crawler/snapshots` GET/PATCH로 메모+traits 저장 확인
+    - SQL로 `payload.manual_note` 반영 확인
+  - 문서 업데이트:
+    - `docs/sdd/v1.0/sectors/crawler-step0-step1-gate.md`
+    - `docs/sdd/v1.0/01-admin/admin-crawler.md`
+- 변경 파일:
+  - `app/api/cron/crawl-prices/route.ts`
+  - `app/api/admin/crawler/run/route.ts`
+  - `docs/sdd/v1.0/sectors/crawler-step0-step1-gate.md`
+  - `docs/sdd/v1.0/01-admin/admin-crawler.md`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `GET /api/cron/crawl-prices` (no auth) -> `401`
+  - `GET /api/cron/crawl-prices` (Bearer) -> `200`
+    - `total:5`, `succeeded:3`, `noData:2`, `failed:0`
+  - `POST /api/admin/crawler/run` (`targetIds:[1]`) -> `siteBreakdown.siteCode='teeupnjoy'` 정상
+  - `PATCH /api/admin/crawler/snapshots` (`snapshotId:227`) -> 메모/traits 저장 성공
+  - `npm run lint`, `npm run build` 통과
+
+### 2026-02-21 77차 기록 (Supabase 로그인/관리자 권한 복구)
+- 작업:
+  - MCP 연결/DB 응답 상태 재확인:
+    - `get_project_url`, `get_publishable_keys`, `list_tables(public)` 정상 응답 확인
+  - 장애 원인 분리:
+    - Auth 로그에서 `/token` `invalid_credentials` 확인 (연결 장애가 아닌 인증 실패)
+    - `public.users`에서 `superadmin@tugol.dev`의 `is_admin/is_super_admin=false` 확인
+  - 복구 SQL 적용:
+    - `public.users`의 `superadmin@tugol.dev` 관리자 플래그 복구
+    - `auth.users`의 해당 계정 비밀번호 해시 재설정 + `updated_at` 갱신
+- 변경 파일:
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `superadmin@tugol.dev` 권한 복구 확인:
+    - `is_admin=true`
+    - `is_super_admin=true`
+  - `auth.users.updated_at` 갱신 확인으로 비밀번호 재설정 반영 확인
+- 남은 이슈:
+  - 클라이언트 세션에 이전 토큰이 남아 있으면 재로그인 필요
+
+### 2026-02-21 78차 기록 (내 예약 상세 취소 모달 API 연결)
+- 작업:
+  - `components/my/ReservationDetailClient.tsx`의 취소 모달 TODO를 실제 API 호출로 구현
+  - `POST /api/reservations/cancel` 연동:
+    - `reservationId`, `cancelReason='USER_REQUEST'` 전송
+  - UI 상태 보강:
+    - `isCancelling`, `cancelError` 상태 추가
+    - 취소 처리 중 버튼 비활성화 및 로딩 문구(`처리 중...`) 표시
+    - 실패 시 모달 내 에러 메시지 렌더
+    - 성공 시 환불 예정 금액 안내 후 `/my/reservations` 이동 + refresh
+- 변경 파일:
+  - `components/my/ReservationDetailClient.tsx`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 예약 상세(`/my/reservations/[id]`)의 취소 버튼이 실제 취소 API를 호출하도록 복구
+  - 사용자 입장에서 취소 처리 진행/실패 상태를 즉시 확인 가능
+- 검증:
+  - `npm run lint` 통과
+
+### 2026-02-21 79차 기록 (예약 취소 환불 실연동: Toss Cancel API)
+- 작업:
+  - `utils/cancellationPolicyV2.ts`
+    - `processPaymentRefund()`를 placeholder에서 Toss 환불 API 실호출 로직으로 교체
+    - `TOSS_SECRET_KEY`/`paymentKey` 누락 시 명시적 실패 메시지 반환
+    - `POST /v1/payments/{paymentKey}/cancel` 호출 + 응답/오류 처리 추가
+  - `app/api/reservations/cancel/route.ts`
+    - `refundStatus`를 `pending | failed | not_required`로 정규화
+    - `payment_key` 누락 케이스를 실패로 명시
+    - 응답에 `refundMessage` 추가
+- 변경 파일:
+  - `utils/cancellationPolicyV2.ts`
+  - `app/api/reservations/cancel/route.ts`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 예약 취소 시 환불 요청이 실제 PG(Toss) 경로를 타도록 보강
+  - 환불 불필요/실패/요청접수 상태가 API 응답에서 구분됨
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과
+
+### 2026-02-21 80차 기록 (Teeup 시드 club_ids 실제값 반영)
+- 작업:
+  - `crawler/src/seed-default-targets.mjs`의 teeup 기본 타겟 `parser_config.club_ids`를 임시값에서 실제 discovery 결과값으로 교체
+  - 원격 DB 확인값 반영:
+    - `external_price_targets(site_code='teeupnjoy').parser_config.club_ids` 14개
+- 변경 파일:
+  - `crawler/src/seed-default-targets.mjs`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 기본 타겟 시드 시 teeup이 단일 임시 club id가 아닌 실제 운영 매핑(14개)으로 생성됨
+- 검증:
+  - `npm --prefix crawler run check` 통과
+
+### 2026-02-21 81차 기록 (tee_time_stats 휴일 판별/KST 기준 보정)
+- 작업:
+  - `app/actions/sdd10-actions.ts`의 `aggregateTeeTimeStats` 보강
+  - KST(`Asia/Seoul`) 기준 메타 계산 헬퍼 추가:
+    - `day_of_week`, `hour_of_day`를 서버 로컬타임 대신 KST 기준으로 계산
+  - `is_holiday` TODO 구현:
+    - 대한민국 고정 공휴일(양력) month-day 집합 기반 판별
+- 변경 파일:
+  - `app/actions/sdd10-actions.ts`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `tee_time_stats` 집계 시 요일/시간/휴일 플래그가 KST 기준으로 일관되게 저장됨
+  - TODO 잔여에서 `is_holiday` 미구현 항목 제거
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과
+
+### 2026-02-21 82차 기록 (DB 성능: 미인덱스 FK 6건 정리)
+- 작업:
+  - 미인덱스 FK 목록 실조회 후 인덱스 마이그레이션 작성/적용
+  - 신규 마이그레이션:
+    - `supabase/migrations/20260221113000_add_missing_fk_indexes.sql`
+  - 추가 인덱스:
+    - `external_course_regions(created_by)`
+    - `external_price_targets(created_by)`
+    - `settlements(created_by_user_id)`
+    - `settlements(confirmed_by_user_id)`
+    - `settlements(locked_by_user_id)`
+    - `tee_times(golf_club_id)`
+  - 원격 적용:
+    - `mcp__supabase__apply_migration(name=add_missing_fk_indexes)` 성공
+- 변경 파일:
+  - `supabase/migrations/20260221113000_add_missing_fk_indexes.sql`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 동일 검증 쿼리 기준 미인덱스 FK 결과 `[]` 확인
+
+### 2026-02-21 83차 기록 (DB 성능: auth_rls_initplan 정책 최적화)
+- 작업:
+  - RLS 정책에서 `auth.uid()` 직접 호출을 `(select auth.uid())` 형태로 치환
+  - 대상 테이블/정책:
+    - `club_admins`: Club admins can view their assignments
+    - `notifications`: Users can view/update own notifications, Admins can create notifications
+    - `reservations`: `reservations_select_owner_or_admin`, `reservations_insert_owner_or_admin`, `reservations_update_owner_cancel`
+    - `users`: Users can view/update their own profile
+  - 신규 마이그레이션:
+    - `supabase/migrations/20260221114500_rls_auth_uid_initplan.sql`
+  - 원격 적용:
+    - `mcp__supabase__apply_migration(name=rls_auth_uid_initplan)` 성공
+- 변경 파일:
+  - `supabase/migrations/20260221114500_rls_auth_uid_initplan.sql`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - `pg_policies` 검사에서 direct `auth.uid()` 사용 정책 0건 확인
+
+### 2026-02-21 84차 기록 (환경변수 템플릿 보강: Cron/Crawler)
+- 작업:
+  - `.env.local.example`에 운영 필수 키 템플릿 추가
+    - `CRON_SECRET`
+    - `GOLFROCK_LOGIN_ID`
+    - `GOLFROCK_LOGIN_PW`
+  - 목적: 로컬/배포 환경에서 크론 및 크롤러 인증 키 누락 방지
+- 변경 파일:
+  - `.env.local.example`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - 환경 템플릿만 봐도 크론/크롤러 필수 키를 누락 없이 세팅 가능
+
+### 2026-02-21 85차 기록 (Supabase 재연결 확인 + notifications INSERT 정책 통합)
+- 작업:
+  - MCP로 Supabase 연결 상태 재검증
+    - `server_time`, `db_name`, `db_user` 조회 성공
+    - 프로젝트 URL 확인: `https://rgbwzpwrbcppdydihxye.supabase.co`
+  - RLS 중복 permissive 정책 잔여 1건(`notifications` INSERT) 정리
+  - 신규 마이그레이션 추가:
+    - `supabase/migrations/20260221081027_consolidate_notifications_insert_policy.sql`
+  - 원격 적용:
+    - `mcp__supabase__apply_migration(name=consolidate_notifications_insert_policy)` 성공
+- 변경 파일:
+  - `supabase/migrations/20260221081027_consolidate_notifications_insert_policy.sql`
+  - `codex.md`
+  - `합동작업 v1.md`
+- 결과:
+  - permissive 중복 정책 검사 결과 `[]` (중복 0건)
+  - `notifications` INSERT 정책이 `notifications_insert_admin_or_service_role` 단일 정책으로 통합됨
+- 검증:
+  - `npm run lint` 통과
+  - `npm run build` 통과
