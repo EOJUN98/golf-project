@@ -17,8 +17,10 @@ function getSupabaseServiceClient() {
   });
 }
 
-async function countTable(supabase: ReturnType<typeof getSupabaseServiceClient>, table: string) {
-  const { count, error } = await (supabase as any).from(table).select('id', { count: 'exact', head: true });
+// 테이블 이름을 Database 타입의 키로 제한하여 타입 안전성 확보
+async function countTable(supabase: ReturnType<typeof getSupabaseServiceClient>, table: keyof Database['public']['Tables']) {
+  // (supabase as any) 제거 및 정적 타이핑 적용
+  const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true });
   if (error) throw error;
   return count || 0;
 }
@@ -38,15 +40,20 @@ export default async function AdminSettingsPage({
 
   try {
     const supabase = getSupabaseServiceClient();
-    counts = {
-      golf_clubs: await countTable(supabase, 'golf_clubs'),
-      tee_times: await countTable(supabase, 'tee_times'),
-      reservations: await countTable(supabase, 'reservations'),
-      users: await countTable(supabase, 'users'),
-      weather_cache: await countTable(supabase, 'weather_cache'),
-      external_price_targets: await countTable(supabase, 'external_price_targets'),
-      external_price_snapshots: await countTable(supabase, 'external_price_snapshots'),
-    };
+    
+    // [Performance] 직렬 await 대신 Promise.all로 병렬 처리하여 응답 속도 개선
+    const [golf_clubs, tee_times, reservations, users, weather_cache, external_price_targets, external_price_snapshots] = await Promise.all([
+      countTable(supabase, 'golf_clubs'),
+      countTable(supabase, 'tee_times'),
+      countTable(supabase, 'reservations'),
+      countTable(supabase, 'users'),
+      countTable(supabase, 'weather_cache'),
+      countTable(supabase, 'external_price_targets'),
+      countTable(supabase, 'external_price_snapshots'),
+    ]);
+
+    counts = { golf_clubs, tee_times, reservations, users, weather_cache, external_price_targets, external_price_snapshots };
+
   } catch (e) {
     configError = e instanceof Error ? e.message : 'Unknown error';
   }
@@ -95,10 +102,10 @@ export default async function AdminSettingsPage({
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
-        <h2 className="text-lg font-bold text-gray-900">초기 데이터</h2>
+        <h2 className="text-lg font-bold text-gray-900">데이터 보정</h2>
         <p className="mt-2 text-sm text-gray-600">
-          골프장/티타임/날씨 데이터가 0이면 대시보드, 티타임관리, 프라이싱이 전부 “비어 보이는” 상태가 됩니다.
-          개발/초기 세팅 단계에서는 샘플 데이터를 만들어서 전체 플로우를 먼저 검증하는 게 안전합니다.
+          미래 티타임/날씨가 비어 있으면 대시보드와 프라이싱이 “작동안하는 것처럼” 보일 수 있습니다.
+          이 작업은 Club 72를 보장하고, 미래 14일 기준 누락된 티타임/날씨만 안전하게 보충합니다.
         </p>
 
         <form action={seedCoreData} className="mt-4">
@@ -106,7 +113,7 @@ export default async function AdminSettingsPage({
             type="submit"
             className="px-5 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium disabled:opacity-50"
           >
-            샘플 데이터 생성(Club 72 + 14일 티타임 + 날씨)
+            미래 14일 데이터 보정 실행
           </button>
           <p className="mt-2 text-xs text-gray-500">
             기본 동작: 비프로덕션 또는 `ADMIN_SEED_ENABLED=true`일 때만 실행됩니다. 슈퍼어드민만 가능.
