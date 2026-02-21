@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
@@ -10,9 +10,15 @@ function PaymentSuccessContent() {
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing');
   const [message, setMessage] = useState('결제를 확인하고 있습니다...');
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  
+  // [Stability] React Strict Mode 등에서 useEffect 중복 실행 방지
+  const isProcessing = useRef(false);
 
   useEffect(() => {
     async function confirmPayment() {
+      if (isProcessing.current) return;
+      isProcessing.current = true;
+
       try {
         // Extract query params
         const paymentKey = searchParams.get('paymentKey');
@@ -89,8 +95,9 @@ function PaymentSuccessContent() {
       }
     }
 
+    // 의존성 배열에서 router 제거 (불필요한 재실행 방지), searchParams가 있을 때만 최초 1회 실행 유도
     confirmPayment();
-  }, [searchParams, router]);
+  }, [searchParams]);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6">
