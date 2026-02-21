@@ -24,6 +24,16 @@ interface AdminDashboardProps {
     totalRevenue: number;
     bookedCount: number;
     chartData: { date: string; amount: number }[];
+    revenue: {
+      lookbackDays: number;
+      status: 'ok' | 'empty' | 'error';
+      message: string | null;
+    };
+    pricingEngine: {
+      status: 'healthy' | 'degraded' | 'unavailable';
+      message: string;
+      sampleTeeTimeId: number | null;
+    };
   };
   dataStatus?: {
     usingServiceRole: boolean;
@@ -33,13 +43,27 @@ interface AdminDashboardProps {
 
 type TabType = 'overview' | 'tee-times' | 'users';
 
+const KST_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function formatKstDateTime(isoString: string) {
+  return KST_DATE_TIME_FORMATTER.format(new Date(isoString));
+}
+
 export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, dataStatus }: AdminDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [teeTimes, setTeeTimes] = useState<TeeTime[]>(initialTeeTimes);
   const [processingId, setProcessingId] = useState<number | null>(null);
 
   // Calculate max value for chart scaling
-  const maxRevenue = Math.max(...stats.chartData.map(d => d.amount), 1);
+  const maxRevenue = Math.max(...stats.chartData.map((d) => d.amount), 0);
 
   async function patchAdminTeeTime(body: unknown) {
     const res = await fetch('/api/admin/tee-times', {
@@ -50,7 +74,12 @@ export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, d
 
     if (!res.ok) {
       const payload = await res.json().catch(() => ({}));
-      const message = typeof payload?.error === 'string' ? payload.error : 'Request failed';
+      const message =
+        typeof payload?.error?.message === 'string'
+          ? payload.error.message
+          : typeof payload?.error === 'string'
+            ? payload.error
+            : 'Request failed';
       throw new Error(message);
     }
   }
@@ -69,7 +98,8 @@ export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, d
       ));
 
     } catch (err) {
-      alert('상태 변경 실패');
+      const message = err instanceof Error ? err.message : '상태 변경 실패';
+      alert(message);
     } finally {
       setProcessingId(null);
     }
@@ -87,10 +117,11 @@ export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, d
       await patchAdminTeeTime({ action: 'update-base-price', id, base_price: newPrice });
 
       setTeeTimes(prev => prev.map(t =>
-        t.id === id ? { ...t, base_price: newPrice } : t
+        t.id === id ? { ...t, base_price: newPrice, current_price: newPrice } : t
       ));
     } catch (err) {
-      alert('가격 수정 실패');
+      const message = err instanceof Error ? err.message : '가격 수정 실패';
+      alert(message);
     } finally {
       setProcessingId(null);
     }
@@ -167,16 +198,26 @@ export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, d
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             {/* 매출 차트 */}
             <div className="lg:col-span-2 bg-gray-800 p-6 rounded-2xl border border-gray-700">
-              <h2 className="text-xl font-bold mb-4 flex items-center">📊 일별 매출 추이</h2>
+              <h2 className="text-xl font-bold mb-4 flex items-center">
+                📊 일별 매출 추이 (최근 {stats.revenue.lookbackDays}일)
+              </h2>
               <div className="h-40 flex items-end gap-2">
-                {stats.chartData.length === 0 ? (
-                  <div className="w-full h-full flex items-center justify-center text-gray-500">데이터가 없습니다</div>
+                {stats.revenue.status === 'error' ? (
+                  <div className="w-full h-full flex items-center justify-center text-red-300">
+                    조회 실패: {stats.revenue.message || 'reservations 조회 오류'}
+                  </div>
                 ) : (
                   stats.chartData.map((d, idx) => (
                     <div key={idx} className="flex-1 flex flex-col items-center group">
                       <div
-                        className="w-full bg-blue-500 rounded-t-md transition-all group-hover:bg-blue-400 relative"
-                        style={{ height: `${(d.amount / maxRevenue) * 100}%` }}
+                        className={`w-full rounded-t-md transition-all relative ${
+                          stats.revenue.status === 'empty'
+                            ? 'bg-gray-600'
+                            : 'bg-blue-500 group-hover:bg-blue-400'
+                        }`}
+                        style={{
+                          height: `${maxRevenue > 0 ? Math.max((d.amount / maxRevenue) * 100, 2) : 2}%`,
+                        }}
                       >
                         <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap border border-gray-600 z-10">
                           {d.amount.toLocaleString()}원
@@ -187,16 +228,50 @@ export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, d
                   ))
                 )}
               </div>
+              {stats.revenue.status === 'empty' && (
+                <p className="mt-3 text-xs text-gray-400">
+                  {stats.revenue.message || '최근 기간 예약 데이터가 없어 0원 기준 차트로 표시됩니다.'}
+                </p>
+              )}
             </div>
 
             {/* 컨트롤 패널 */}
             <div className="flex flex-col gap-4">
-              <div className="p-5 rounded-2xl bg-gray-800 border border-green-500/50 flex-1">
+              <div
+                className={`p-5 rounded-2xl flex-1 ${
+                  stats.pricingEngine.status === 'healthy'
+                    ? 'bg-gray-800 border border-green-500/50'
+                    : stats.pricingEngine.status === 'degraded'
+                      ? 'bg-gray-800 border border-amber-500/50'
+                      : 'bg-gray-800 border border-gray-600/70'
+                }`}
+              >
                 <div className="flex justify-between items-center mb-2">
-                  <h2 className="text-xl font-bold text-green-400">🤖 AI Pricing Engine</h2>
-                  <Power className="text-green-500" />
+                  <h2
+                    className={`text-xl font-bold ${
+                      stats.pricingEngine.status === 'healthy'
+                        ? 'text-green-400'
+                        : stats.pricingEngine.status === 'degraded'
+                          ? 'text-amber-300'
+                          : 'text-gray-300'
+                    }`}
+                  >
+                    🤖 AI Pricing Engine
+                  </h2>
+                  <Power
+                    className={
+                      stats.pricingEngine.status === 'healthy'
+                        ? 'text-green-500'
+                        : stats.pricingEngine.status === 'degraded'
+                          ? 'text-amber-400'
+                          : 'text-gray-500'
+                    }
+                  />
                 </div>
-                <p className="text-gray-400 text-sm">현재 알고리즘이 정상 작동 중입니다.</p>
+                <p className="text-gray-300 text-sm">{stats.pricingEngine.message}</p>
+                {stats.pricingEngine.sampleTeeTimeId && (
+                  <p className="mt-2 text-xs text-gray-400">샘플 티타임 ID: {stats.pricingEngine.sampleTeeTimeId}</p>
+                )}
               </div>
 
               <div className="flex gap-4">
@@ -240,7 +315,7 @@ export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, d
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="text-gray-400 border-b border-gray-700 text-sm">
-                  <th className="p-3">시간</th>
+                  <th className="p-3">일시 (KST)</th>
                   <th className="p-3">날씨 정보</th>
                   <th className="p-3">기준 가격 (Override)</th>
                   <th className="p-3">상태 관리</th>
@@ -248,12 +323,7 @@ export default function AdminDashboard({ initialTeeTimes, initialUsers, stats, d
               </thead>
               <tbody>
                 {teeTimes.map((item) => {
-                  const dateTimeStr = new Date(item.tee_off).toLocaleString('ko-KR', {
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  });
+                  const dateTimeStr = formatKstDateTime(item.tee_off);
                   const weather: any = item.weather_condition || {}; // Parse JSONB
                   const isRain = weather.rn1 > 0 || weather.sky === 'RAIN';
 
